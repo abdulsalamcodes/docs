@@ -1,7 +1,7 @@
 ---
 title: "Verify Nomba Webhook Signatures in Your Application"
 sidebarTitle: "Verification"
-description: "Step-by-step guide to HMAC-SHA256 signature verification for Nomba webhooks, with reference implementations in Go and JavaScript."
+description: "How to verify Nomba HMAC-SHA256 webhook signatures in your application, with complete reference implementations in Go and JavaScript."
 ---
 
 Every webhook request sent by Nomba includes an HMAC-SHA256 signature computed from a subset of the payload fields. Ancra verifies this signature automatically the moment an event arrives at `POST /webhooks/nomba` — requests that fail verification are rejected with `401 Unauthorized` and never reach your ledger logic.

@@ -21,7 +21,6 @@ When you query an account's transactions, Ancra returns a paginated list of ledg
   "currency": "NGN",
   "entry_type": "inbound_credit",
   "external_ref": "API-VACT_TRA-7e3f2a...",
-  "narration": "Transfer from John Doe",
   "created_at": "2026-01-01T11:00:00Z"
 }
 ```
@@ -54,10 +53,6 @@ When you query an account's transactions, Ancra returns a paginated list of ledg
   The Nomba transaction ID associated with this entry. Use this reference when contacting Nomba support or performing manual reconciliation against Nomba's records.
 </ResponseField>
 
-<ResponseField name="narration" type="string">
-  The payment narration as supplied by the sender or the initiating system. For inbound NIP transfers, this is the narration the sender typed at their bank.
-</ResponseField>
-
 <ResponseField name="created_at" type="string (ISO 8601)">
   The UTC timestamp at which this ledger entry was created.
 </ResponseField>
@@ -71,9 +66,8 @@ Every ledger entry carries an `entry_type` that describes why the funds moved. T
 | `entry_type` | Direction | Description |
 |---|---|---|
 | `inbound_credit` | `credit` | A payment was received on the virtual account via NIP transfer. Nomba confirmed the transaction and Ancra posted the credit. |
-| `transfer_debit` | `debit` | An outbound transfer was initiated from this account. Funds were debited at the point the transfer was submitted to the NIP network. |
+| `transfer_out` | `debit` | An outbound transfer was initiated from this account. Funds are debited at the point the transfer is submitted to the NIP network. |
 | `transfer_reversal` | `credit` | An outbound transfer failed after the debit was posted. Ancra reverses the debit and returns the funds to the account balance. |
-| `payment_reversal` | `debit` | A previously credited inbound payment was reversed by Nomba (for example, due to a chargeback or error). The credit is unwound from the ledger. |
 
 <Info>
   All entry types are system-generated. You do not create ledger entries directly — they are produced automatically as a result of payment events and transfer requests.
@@ -107,6 +101,38 @@ Authorization: Bearer <key>
 
 ---
 
+## Transactions
+
+To retrieve a paginated list of ledger entries for a virtual account (newest first), call:
+
+```http
+GET /accounts/{id}/transactions?limit=20&offset=0
+Authorization: Bearer <key>
+```
+
+```json
+{
+  "Entries": [
+    {
+      "id": "e1b2c3d4-f5a6-7890-bcde-f12345678901",
+      "account_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "direction": "credit",
+      "amount": 100000,
+      "currency": "NGN",
+      "entry_type": "inbound_credit",
+      "external_ref": "API-VACT_TRA-7e3f2a...",
+      "created_at": "2026-01-01T11:00:00Z"
+    }
+  ],
+  "Limit": 20,
+  "Offset": 0
+}
+```
+
+Use `limit` and `offset` to page through the full transaction history. Each entry in the `Entries` array is a [Transaction Entry Object](#transaction-entry-object).
+
+---
+
 ## Account Statement
 
 For generating downloadable statements or auditing a full transaction history, use the statement endpoint:
@@ -119,17 +145,18 @@ Authorization: Bearer <key>
 ```json
 {
   "account_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "opening_balance": 0,
-  "closing_balance": 250000,
+  "opening_balance_kobo": 0,
+  "closing_balance_kobo": 250000,
   "currency": "NGN",
   "entries": [
     {
       "id": "e1b2c3d4-f5a6-7890-bcde-f12345678901",
       "direction": "credit",
-      "amount": 250000,
-      "running_balance": 250000,
+      "amount_kobo": 250000,
+      "running_balance_kobo": 250000,
+      "currency": "NGN",
       "entry_type": "inbound_credit",
-      "narration": "Transfer from John Doe",
+      "external_ref": "API-VACT_TRA-7e3f2a...",
       "created_at": "2026-01-01T11:00:00Z"
     }
   ],
@@ -138,9 +165,9 @@ Authorization: Bearer <key>
 }
 ```
 
-Each entry in the statement response includes a `running_balance` field — the account balance **after** that entry was applied. This figure is accurate across all paginated pages: whether you are looking at page one or page five, the `running_balance` on each entry reflects the true cumulative balance at that point in time.
+Each entry in the statement response includes a `running_balance_kobo` field — the account balance **after** that entry was applied. This figure is accurate across all paginated pages: whether you are looking at page one or page five, the `running_balance_kobo` on each entry reflects the true cumulative balance at that point in time.
 
-The response also includes `opening_balance` and `closing_balance` for the requested page window, making it straightforward to produce a well-formed PDF or CSV statement without additional computation.
+The response also includes `opening_balance_kobo` and `closing_balance_kobo` for the requested page window, making it straightforward to produce a well-formed PDF or CSV statement without additional computation.
 
 <Note>
   The statement endpoint is best suited for historical reporting and compliance exports. For real-time balance checks, use `GET /accounts/{id}/balance` instead — it is faster and always reflects the latest state.

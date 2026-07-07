@@ -1,7 +1,7 @@
 ---
-title: "Webhook Event Reference for Ancra Payments"
+title: "Nomba Webhook Events Reference for Ancra Integration"
 sidebarTitle: "Events"
-description: "Reference for the four event types fired by Nomba to Ancra, including payload shapes, key fields, and handling notes."
+description: "Reference for all four Nomba event types processed by Ancra, including full payload shapes, key field definitions, and handling guidance."
 ---
 
 Ancra processes four event types sent by Nomba. Each event arrives at `POST /webhooks/nomba` with an HMAC-SHA256 signature and a consistent top-level envelope containing `event_type`, `requestId`, and a `data` object. Understanding each event helps you build reliable, predictable payment flows and know exactly what triggers a ledger change.

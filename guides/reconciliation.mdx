@@ -10,7 +10,7 @@ Ancra periodically compares your internal ledger against Nomba's transaction rec
 
 ## How Reconciliation Works
 
-Ancra runs an automated sweep on a configurable schedule — the default interval is **every 60 seconds**. Each sweep:
+Ancra runs an automated reconciliation sweep on a periodic schedule in the background. Each sweep:
 
 1. Fetches the full set of Nomba transactions for the period since the last sweep.
 2. Cross-references every Nomba transaction against the corresponding ledger entry (matched on `external_ref`, which is the Nomba transaction ID).

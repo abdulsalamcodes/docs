@@ -16,6 +16,7 @@ When you create or retrieve a customer, Ancra returns the following JSON object:
 {
   "id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
   "kyc_tier": 1,
+  "display_name": "Amara Okonkwo",
   "created_at": "2026-01-01T00:00:00Z"
 }
 ```
@@ -26,6 +27,10 @@ When you create or retrieve a customer, Ancra returns the following JSON object:
 
 <ResponseField name="kyc_tier" type="integer">
   The customer's KYC verification level. Valid values are `1`, `2`, or `3`. Defaults to `1` if not specified at creation. See [KYC Tiers](/concepts/kyc-tiers) for a full breakdown of what each tier allows.
+</ResponseField>
+
+<ResponseField name="display_name" type="string">
+  The customer's registered display name, joined from the active identity version. This is the name that appears on the bank account holder record. It is set when you provision a virtual account and may be updated via `PUT /accounts/{id}`. Empty string if no account has been provisioned yet.
 </ResponseField>
 
 <ResponseField name="created_at" type="string (ISO 8601)">
@@ -60,9 +65,14 @@ A successful request returns a `201 Created` response with the new customer obje
 {
   "id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
   "kyc_tier": 1,
+  "display_name": "",
   "created_at": "2026-01-01T00:00:00Z"
 }
 ```
+
+<Note>
+  `display_name` is empty on a freshly created customer record. It is populated once you provision a virtual account for the customer via `POST /accounts`.
+</Note>
 
 Store the returned `id` — you will use it as the `customer_id` in the subsequent account provisioning request.
 
@@ -83,6 +93,7 @@ Authorization: Bearer <key>
 {
   "id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
   "kyc_tier": 1,
+  "display_name": "Amara Okonkwo",
   "created_at": "2026-01-01T00:00:00Z"
 }
 ```
@@ -98,7 +109,14 @@ Authorization: Bearer <key>
 
 ```json
 {
-  "customers": [...],
+  "customers": [
+    {
+      "id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+      "kyc_tier": 1,
+      "display_name": "Amara Okonkwo",
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ],
   "limit": 20,
   "offset": 0
 }

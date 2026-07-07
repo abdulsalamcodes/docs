@@ -1,7 +1,7 @@
 ---
-title: "Customers API Reference — Ancra"
+title: "Ancra Customers API Reference — KYC Tier Management"
 sidebarTitle: "Customers"
-description: "Create and manage customer records in Ancra. Customers own virtual accounts and carry a KYC tier that controls account limits."
+description: "Create and manage customer records in Ancra. Customers own virtual accounts and carry a KYC tier that controls account limits and identity requirements."
 ---
 
 The Customers API lets you create and manage the customer records that own virtual accounts. Every virtual account you provision must be attached to an existing customer. The customer's `kyc_tier` determines which identity fields are required at account provisioning time and what transaction limits apply.
@@ -58,12 +58,6 @@ Create a new customer record. You can optionally set a KYC tier at creation time
   "created_at": "2026-01-01T10:00:00Z"
 }
 ```
-
-### Errors
-
-| Status | Description |
-|--------|-------------|
-| `400`  | Bad request — the request body contains an invalid field or an unsupported `kyc_tier` value. |
 
 ---
 

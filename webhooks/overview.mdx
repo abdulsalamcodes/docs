@@ -1,7 +1,7 @@
 ---
-title: "Webhooks: Receive Real-Time Payment Notifications"
+title: "Webhooks: Real-Time Payment Notifications with Nomba"
 sidebarTitle: "Overview"
-description: "Learn how Ancra receives and processes Nomba webhook events to automatically credit customer ledgers without polling."
+description: "Understand how Ancra receives, verifies, and processes Nomba webhook events to automatically credit customer ledgers without polling."
 ---
 
 When a customer sends a NIP transfer to their dedicated virtual account, Nomba immediately notifies Ancra via a signed HTTP event. Ancra verifies the signature, resolves the virtual account to the correct customer, and credits the ledger — all before responding to Nomba. You do not need to poll for new payments or build any custom payment listener.

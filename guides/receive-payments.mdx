@@ -118,7 +118,7 @@ When a sender makes a NIP transfer to your customer's virtual account number, No
        openssl rand -hex 32
        ```
     5. Paste the secret into the **Signature Key** field in the Nomba dashboard.
-    6. Set the same value as the `WEBHOOK_SECRET` environment variable on your Ancra deployment.
+    6. Copy the same secret value into your Ancra deployment's webhook secret configuration so that Ancra can verify the HMAC signature on every incoming event.
     7. Subscribe to the **`payment_success`** event.
 
     Once configured, every NIP payment to any of your virtual account numbers will trigger a signed `POST /webhooks/nomba` request that Ancra automatically verifies and processes.

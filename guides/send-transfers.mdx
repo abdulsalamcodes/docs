@@ -15,7 +15,7 @@ Ancra lets you send money from a customer's virtual account to any Nigerian bank
     Call `POST /transfers/lookup` with the recipient's account number and bank code. Ancra returns the registered account name. Verify that name with your user before proceeding — a mismatched name is the clearest sign of a wrong account number.
   </Step>
   <Step title="Initiate the transfer">
-    Call `POST /accounts/{id}/transfers` with the amount, destination details, and a unique reference. Ancra validates all fields before touching the ledger.
+    Call `POST /accounts/{id}/transfer` with the amount, destination details, and a unique reference. Ancra validates all fields before touching the ledger.
   </Step>
   <Step title="Ancra debits the customer's ledger atomically">
     If the account has sufficient funds, Ancra posts an `outbound_debit` entry. The balance is reduced before any network call leaves the system, keeping the ledger consistent at all times.
@@ -93,10 +93,10 @@ For the complete list of supported banks, call `GET /transfers/banks`.
 
 ## Step 2: Initiate the Transfer
 
-Once you have confirmed the recipient's name, send the transfer from the customer's virtual account. Replace `{id}` with the Ancra account UUID.
+Once you have confirmed the recipient's name, send the transfer from the customer's virtual account. Replace `{id}` with the Ancra account UUID. Note that the endpoint path is `/transfer` (singular).
 
 ```bash
-curl -X POST https://your-deployment.onrender.com/accounts/a1b2c3d4-e5f6-7890-abcd-ef0123456789/transfers \
+curl -X POST https://your-deployment.onrender.com/accounts/a1b2c3d4-e5f6-7890-abcd-ef0123456789/transfer \
   -H "Authorization: Bearer <key>" \
   -H "Content-Type: application/json" \
   -d '{

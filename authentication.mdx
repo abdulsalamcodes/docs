@@ -1,7 +1,7 @@
 ---
-title: "Authenticate Requests to the Ancra API"
+title: "How to Authenticate API Requests with Ancra API Keys"
 sidebarTitle: "Authentication"
-description: "Learn how Ancra API keys work, how to create and revoke them, and how to attach a Bearer token to every API request."
+description: "Learn how Ancra API keys work, how to create and revoke them via the admin endpoint, and how to attach a Bearer token to every request."
 ---
 
 Every request to the Ancra API must be authenticated. Ancra uses **opaque Bearer tokens** — API keys you create through the admin interface and attach to each request via the standard `Authorization` header. There are no JWTs, OAuth flows, or session cookies involved.
@@ -59,7 +59,7 @@ Replace `{id}` with the `id` value returned when the key was created.
 Ancra API keys follow a predictable structure:
 
 - **Prefix:** All keys begin with `ancra_` so they are easy to identify in logs and configuration files.
-- **Length:** The suffix is exactly 32 characters, making the full key 38 characters long (including the `ancra_` prefix).
+- **Length:** The suffix is exactly 64 characters (the hex encoding of 32 random bytes), making the full key 70 characters long including the `ancra_` prefix.
 - **Storage:** Keys are stored server-side as SHA-256 hashes. Ancra never stores the plaintext value after the initial creation response.
 
 <Note>

@@ -56,6 +56,136 @@ When you provision or retrieve a virtual account, Ancra returns the following JS
 
 ---
 
+## Provisioning an Account
+
+To create a virtual account for a customer, send a `POST` request to `/accounts`:
+
+```http
+POST /accounts
+Authorization: Bearer <key>
+Content-Type: application/json
+```
+
+```json
+{
+  "customer_id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+  "display_name": "Amara Okonkwo",
+  "customer_email": "amara@example.com",
+  "phone_number": "08012345678",
+  "bvn": "12345678901"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `customer_id` | UUID | Yes | The customer who will own this account |
+| `display_name` | string | Yes | Name registered on the virtual account |
+| `customer_email` | string | Yes | Customer's email address |
+| `phone_number` | string | No | Customer's phone number |
+| `bvn` | string | No | BVN — required for KYC Tier 2 and above |
+| `nin` | string | No | NIN — required for KYC Tier 3 |
+
+A successful request returns `201 Created` with an `account` object and an `identity` record:
+
+```json
+{
+  "account": {
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "customer_id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+    "account_ref": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+    "bank_account_number": "9876543210",
+    "bank_account_name": "Amara Okonkwo",
+    "status": "active",
+    "created_at": "2026-01-01T00:00:00Z"
+  },
+  "identity": {
+    "id": "i1b2c3d4-e5f6-7890-bcde-f12345678901",
+    "customer_id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+    "display_name": "Amara Okonkwo",
+    "effective_from": "2026-01-01T00:00:00Z"
+  }
+}
+```
+
+Store the `account.bank_account_number` — this is the 10-digit number you share with your end user so they can receive inbound transfers.
+
+---
+
+## Retrieving Accounts
+
+### Get a single account
+
+```http
+GET /accounts/{id}
+Authorization: Bearer <key>
+```
+
+Returns the account object for the given UUID.
+
+### List all accounts
+
+```http
+GET /accounts?limit=20&offset=0
+Authorization: Bearer <key>
+```
+
+```json
+{
+  "accounts": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "customer_id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+      "account_ref": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+      "bank_account_number": "9876543210",
+      "bank_account_name": "Amara Okonkwo",
+      "status": "active",
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ],
+  "limit": 20,
+  "offset": 0
+}
+```
+
+---
+
+## Updating an Account
+
+You can update the display name on an active account. This closes the current identity version and opens a new one. Historical ledger entries are unaffected.
+
+```http
+PUT /accounts/{id}
+Authorization: Bearer <key>
+Content-Type: application/json
+```
+
+```json
+{
+  "display_name": "Amara O. Okonkwo"
+}
+```
+
+Returns `200 OK` with `{"status": "updated"}` on success.
+
+---
+
+## Closing an Account
+
+To permanently deactivate a virtual account:
+
+```http
+POST /accounts/{id}/close
+Authorization: Bearer <key>
+```
+
+Returns `200 OK` with `{"status": "closed"}` on success.
+
+<Warning>
+  **Closure is irreversible via the API.** Once closed, the account cannot be reopened. See [Account Status](#account-status) below for what happens to inbound payments after closure.
+</Warning>
+
+---
+
 ## How Payments Work
 
 When a sender initiates a NIP transfer to your customer's `bank_account_number`, the following happens automatically:
