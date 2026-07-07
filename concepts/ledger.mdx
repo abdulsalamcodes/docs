@@ -1,0 +1,172 @@
+---
+title: "Ledger: Double-Entry Accounting for Virtual Accounts"
+sidebarTitle: "Ledger"
+description: "Explore Ancra's double-entry ledger — how every credit and debit is recorded, how to query balances and statements, and how reconciliation works."
+---
+
+Ancra maintains a **double-entry ledger** for every virtual account. Each movement of funds — whether an inbound NIP transfer, an outbound payment, or a reversal — produces a ledger entry with a direction, an amount, and a type. The ledger is the single source of truth for every account's balance and transaction history.
+
+---
+
+## Transaction Entry Object
+
+When you query an account's transactions, Ancra returns a paginated list of ledger entries. Each entry has the following shape:
+
+```json
+{
+  "id": "e1b2c3d4-f5a6-7890-bcde-f12345678901",
+  "account_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "direction": "credit",
+  "amount": 100000,
+  "currency": "NGN",
+  "entry_type": "inbound_credit",
+  "external_ref": "API-VACT_TRA-7e3f2a...",
+  "narration": "Transfer from John Doe",
+  "created_at": "2026-01-01T11:00:00Z"
+}
+```
+
+<ResponseField name="id" type="string (UUID)" required>
+  The unique identifier for this ledger entry. Stable and immutable once created.
+</ResponseField>
+
+<ResponseField name="account_id" type="string (UUID)" required>
+  The Ancra virtual account ID that this entry belongs to.
+</ResponseField>
+
+<ResponseField name="direction" type="string" required>
+  The flow of funds relative to the account. `credit` means money arrived in the account; `debit` means money left the account.
+</ResponseField>
+
+<ResponseField name="amount" type="integer" required>
+  The value of this entry in **kobo**. Divide by `100` to get the NGN equivalent. For example, `100000` kobo = ₦1,000.
+</ResponseField>
+
+<ResponseField name="currency" type="string">
+  The currency of the entry. Always `NGN` for Ancra virtual accounts.
+</ResponseField>
+
+<ResponseField name="entry_type" type="string" required>
+  The category of ledger movement. See [Entry Types](#entry-types) below for all possible values and their meanings.
+</ResponseField>
+
+<ResponseField name="external_ref" type="string">
+  The Nomba transaction ID associated with this entry. Use this reference when contacting Nomba support or performing manual reconciliation against Nomba's records.
+</ResponseField>
+
+<ResponseField name="narration" type="string">
+  The payment narration as supplied by the sender or the initiating system. For inbound NIP transfers, this is the narration the sender typed at their bank.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  The UTC timestamp at which this ledger entry was created.
+</ResponseField>
+
+---
+
+## Entry Types
+
+Every ledger entry carries an `entry_type` that describes why the funds moved. The table below lists all possible values:
+
+| `entry_type` | Direction | Description |
+|---|---|---|
+| `inbound_credit` | `credit` | A payment was received on the virtual account via NIP transfer. Nomba confirmed the transaction and Ancra posted the credit. |
+| `transfer_debit` | `debit` | An outbound transfer was initiated from this account. Funds were debited at the point the transfer was submitted to the NIP network. |
+| `transfer_reversal` | `credit` | An outbound transfer failed after the debit was posted. Ancra reverses the debit and returns the funds to the account balance. |
+| `payment_reversal` | `debit` | A previously credited inbound payment was reversed by Nomba (for example, due to a chargeback or error). The credit is unwound from the ledger. |
+
+<Info>
+  All entry types are system-generated. You do not create ledger entries directly — they are produced automatically as a result of payment events and transfer requests.
+</Info>
+
+---
+
+## Balance
+
+To retrieve the current ledger balance for a virtual account, call:
+
+```http
+GET /accounts/{id}/balance
+Authorization: Bearer <key>
+```
+
+```json
+{
+  "AccountID": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "Balance": 250000,
+  "Currency": "NGN",
+  "AsOf": "2026-01-01T12:00:00Z"
+}
+```
+
+`Balance` is returned in **kobo**. The `AsOf` timestamp tells you exactly when the balance snapshot was taken — useful for audit trails and near-real-time reconciliation.
+
+<Tip>
+  `250000` kobo = ₦2,500.00. Always display NGN amounts to your end users by dividing the kobo value by `100`.
+</Tip>
+
+---
+
+## Account Statement
+
+For generating downloadable statements or auditing a full transaction history, use the statement endpoint:
+
+```http
+GET /accounts/{id}/statement?limit=20&offset=0
+Authorization: Bearer <key>
+```
+
+```json
+{
+  "account_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "opening_balance": 0,
+  "closing_balance": 250000,
+  "currency": "NGN",
+  "entries": [
+    {
+      "id": "e1b2c3d4-f5a6-7890-bcde-f12345678901",
+      "direction": "credit",
+      "amount": 250000,
+      "running_balance": 250000,
+      "entry_type": "inbound_credit",
+      "narration": "Transfer from John Doe",
+      "created_at": "2026-01-01T11:00:00Z"
+    }
+  ],
+  "limit": 20,
+  "offset": 0
+}
+```
+
+Each entry in the statement response includes a `running_balance` field — the account balance **after** that entry was applied. This figure is accurate across all paginated pages: whether you are looking at page one or page five, the `running_balance` on each entry reflects the true cumulative balance at that point in time.
+
+The response also includes `opening_balance` and `closing_balance` for the requested page window, making it straightforward to produce a well-formed PDF or CSV statement without additional computation.
+
+<Note>
+  The statement endpoint is best suited for historical reporting and compliance exports. For real-time balance checks, use `GET /accounts/{id}/balance` instead — it is faster and always reflects the latest state.
+</Note>
+
+---
+
+## Reconciliation
+
+Ancra automatically cross-checks every ledger entry against Nomba's records. Each entry stores an `external_ref` (Nomba's transaction ID), and Ancra's reconciliation process periodically verifies that the posted amounts and directions match Nomba's settlement data.
+
+If a discrepancy is detected — for example, a Nomba payment that did not produce an Ancra ledger entry, or an Ancra entry without a matching Nomba record — Ancra flags the entry for review.
+
+<Tip>
+  For guidance on running your own reconciliation checks, building exception reports, and handling flagged discrepancies, see the [Reconciliation guide](/guides/reconciliation).
+</Tip>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Virtual Accounts" icon="building-columns" href="/concepts/virtual-accounts">
+    Revisit how virtual accounts are provisioned and how inbound NIP payments flow into the ledger.
+  </Card>
+  <Card title="Reconciliation Guide" icon="chart-bar" href="/guides/reconciliation">
+    Learn how to cross-reference Ancra ledger data with Nomba settlement records and handle exceptions.
+  </Card>
+</CardGroup>

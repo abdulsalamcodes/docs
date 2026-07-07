@@ -1,0 +1,210 @@
+---
+title: "Transfers API Reference — Ancra"
+sidebarTitle: "Transfers"
+description: "Verify recipient Nigerian bank accounts and send money from virtual accounts to any Nigerian bank using the Ancra Transfers API endpoints."
+---
+
+The Transfers API lets you verify recipient bank accounts and send money from virtual accounts to any Nigerian bank. Use the lookup endpoint to confirm a destination account name before initiating any outbound transfer.
+
+---
+
+## POST /transfers/lookup
+
+### Bank Account Lookup
+
+Resolve an account number to a verified account name before sending funds. This call proxies a real-time lookup through Nomba.
+
+```http
+POST /transfers/lookup
+Authorization: Bearer <key>
+```
+
+<ParamField body="account_number" type="string" required>
+  The 10-digit NUBAN account number of the destination account.
+</ParamField>
+
+<ParamField body="bank_code" type="string" required>
+  The 3-digit CBN bank code for the destination institution (e.g. `"044"` for Access Bank).
+</ParamField>
+
+#### Request
+
+```json
+{
+  "account_number": "0123456789",
+  "bank_code": "044"
+}
+```
+
+#### Response `200 OK`
+
+<ResponseField name="account_number" type="string">
+  The 10-digit NUBAN that was resolved.
+</ResponseField>
+
+<ResponseField name="account_name" type="string">
+  The verified full name registered to the account.
+</ResponseField>
+
+```json
+{
+  "account_number": "0123456789",
+  "account_name": "Jane Doe"
+}
+```
+
+#### Error Codes
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | One or more required fields are missing from the request body. |
+| `502`  | The account could not be resolved via Nomba — check the account number and bank code, then retry. |
+
+<Tip>
+  Always perform a lookup and store the returned `account_name` as your `destination_name` before calling the transfer endpoint. This gives you a verified name and reduces the risk of a misdirected payment.
+</Tip>
+
+---
+
+## POST /accounts/\{id\}/transfer
+
+### Initiate Transfer
+
+Debit a virtual account and push funds to any Nigerian bank account. `{id}` is the UUID of the source virtual account you want to send from.
+
+```http
+POST /accounts/{id}/transfer
+Authorization: Bearer <key>
+```
+
+<ParamField path="id" type="string" required>
+  The UUID of the source virtual account to debit.
+</ParamField>
+
+<ParamField body="amount" type="integer" required>
+  The amount to transfer, expressed in **kobo**. For example, `500000` equals ₦5,000.
+</ParamField>
+
+<ParamField body="reference" type="string" required>
+  A unique idempotency key for this transfer (e.g. `"TXN-2026-0042"`). Every request must carry a distinct reference — submitting a previously used reference will be rejected.
+</ParamField>
+
+<ParamField body="sender_name" type="string" required>
+  The name that will appear as the sender on the recipient's bank statement.
+</ParamField>
+
+<ParamField body="destination_bank" type="string" required>
+  The 3-digit CBN bank code for the destination institution (e.g. `"044"`).
+</ParamField>
+
+<ParamField body="destination_account" type="string" required>
+  The 10-digit NUBAN of the recipient's account.
+</ParamField>
+
+<ParamField body="destination_name" type="string" required>
+  The verified name of the destination account holder. Use the value returned by `POST /transfers/lookup`.
+</ParamField>
+
+<ParamField body="narration" type="string">
+  An optional description shown to the recipient on their bank statement (e.g. `"Invoice payment"`).
+</ParamField>
+
+#### Request
+
+```json
+{
+  "amount": 500000,
+  "narration": "Invoice payment",
+  "reference": "TXN-2026-0042",
+  "sender_name": "Acme Corp",
+  "destination_bank": "044",
+  "destination_account": "0123456789",
+  "destination_name": "Jane Doe"
+}
+```
+
+<Note>
+  All amounts are denominated in **kobo**. Divide by 100 to convert to naira — `500000` kobo equals ₦5,000.
+</Note>
+
+#### Response `200 OK`
+
+A `status` of `"submitted"` means Ancra has accepted the request and forwarded it to Nomba. Check `nomba_transaction.status` for the real-time outcome.
+
+<ResponseField name="status" type="string">
+  Always `"submitted"` on a successful request acceptance.
+</ResponseField>
+
+<ResponseField name="nomba_transaction" type="object">
+  The transaction object returned by Nomba.
+
+  <Expandable title="nomba_transaction fields">
+    <ResponseField name="id" type="string">
+      Nomba's internal transaction identifier.
+    </ResponseField>
+
+    <ResponseField name="amount" type="number">
+      The transfer amount in naira (Nomba returns this as a decimal, e.g. `5000.00`).
+    </ResponseField>
+
+    <ResponseField name="fee" type="number">
+      The processing fee charged by Nomba, in naira (e.g. `26.88`).
+    </ResponseField>
+
+    <ResponseField name="type" type="string">
+      Transaction type — will be `"bank_transfer"` for outbound transfers.
+    </ResponseField>
+
+    <ResponseField name="status" type="string">
+      Nomba's settlement status for this transaction (e.g. `"successful"`).
+    </ResponseField>
+
+    <ResponseField name="timeCreated" type="string">
+      ISO 8601 timestamp of when Nomba created the transaction.
+    </ResponseField>
+
+    <ResponseField name="meta" type="object">
+      Additional metadata.
+
+      <Expandable title="meta fields">
+        <ResponseField name="merchantTxRef" type="string">
+          Mirrors the `reference` you submitted in the request body.
+        </ResponseField>
+
+        <ResponseField name="rrn" type="string">
+          The Retrieval Reference Number assigned by the interbank network.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json
+{
+  "status": "submitted",
+  "nomba_transaction": {
+    "id": "TXN-abc123",
+    "amount": 5000.00,
+    "fee": 26.88,
+    "type": "bank_transfer",
+    "status": "successful",
+    "timeCreated": "2026-01-01T12:00:00Z",
+    "meta": {
+      "merchantTxRef": "TXN-2026-0042",
+      "rrn": "060012345678"
+    }
+  }
+}
+```
+
+#### Error Codes
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | One or more required fields are missing or invalid. Check that `amount` is a positive integer in kobo, `destination_account` is 10 digits, and `destination_bank` is a valid 3-digit code. |
+| `422`  | The source virtual account has insufficient funds to cover the transfer amount plus fees. |
+| `502`  | Nomba rejected the transfer. The ledger debit is **automatically reversed** — no funds leave the account. Retry after investigating the rejection reason. |
+
+<Warning>
+  The `reference` field must be globally unique across all your transfers. Reusing a reference from a previous request — successful or not — will result in a `400` rejection. Generate a new reference for every transfer attempt.
+</Warning>

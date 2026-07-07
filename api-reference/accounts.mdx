@@ -1,0 +1,542 @@
+---
+title: "Virtual Accounts API Reference — Ancra"
+sidebarTitle: "Accounts"
+description: "Provision dedicated virtual account numbers, fetch balances, list transactions, generate statements, and close accounts via the Ancra Accounts API."
+---
+
+The Accounts API lets you provision dedicated virtual account numbers, retrieve balances, list transactions, and close accounts. Each virtual account is tied to a customer record and inherits the identity requirements of that customer's KYC tier. All monetary values in this API are expressed in **kobo** (the smallest unit of Nigerian naira). Divide any amount field by 100 to get the naira equivalent.
+
+---
+
+## POST /accounts — Provision Account
+
+```http
+POST /accounts
+Authorization: Bearer <key>
+```
+
+Provision a new dedicated virtual account number for an existing customer. The required identity fields depend on the customer's `kyc_tier` — see the field notes below.
+
+### Request body
+
+<ParamField body="customer_id" type="string (UUID)" required>
+  The UUID of the customer this account belongs to. The customer must already exist. You can create one with [POST /customers](/api-reference/customers#post-customers-create-customer).
+</ParamField>
+
+<ParamField body="display_name" type="string" required>
+  The name that will be registered on the bank account. This is the name counterparties see when they send a transfer to this account number.
+</ParamField>
+
+<ParamField body="customer_email" type="string" required>
+  The customer's email address. Used for identity verification and notification purposes.
+</ParamField>
+
+<ParamField body="phone_number" type="string">
+  The customer's phone number in international format (e.g., `+2348012345678`). Optional for Tier 1 customers.
+</ParamField>
+
+<ParamField body="bvn" type="string">
+  The customer's 11-digit Bank Verification Number. **Required for Tier 2 and Tier 3 customers.** Optional for Tier 1.
+</ParamField>
+
+<ParamField body="nin" type="string">
+  The customer's 11-digit National Identification Number. **Required for Tier 3 customers.** Optional for Tier 1 and Tier 2.
+</ParamField>
+
+<Note>
+  The `bvn` and `nin` fields are listed as optional at the schema level, but Ancra enforces them based on the customer's `kyc_tier`. Provisioning will fail if you omit a required identity field for the given tier.
+</Note>
+
+### Request example
+
+```json
+{
+  "customer_id": "c1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "display_name": "Amara Okonkwo",
+  "customer_email": "amara@example.com",
+  "phone_number": "+2348012345678",
+  "bvn": "12345678901",
+  "nin": "98765432101"
+}
+```
+
+### Response `201 Created`
+
+<ResponseField name="id" type="string (UUID)">
+  The unique identifier for the newly provisioned virtual account. Use this as the `{id}` path parameter in all subsequent account endpoints.
+</ResponseField>
+
+<ResponseField name="customer_id" type="string (UUID)">
+  The UUID of the customer this account belongs to.
+</ResponseField>
+
+<ResponseField name="bank_account_number" type="string">
+  The 10-digit NUBAN account number assigned to this virtual account. This is the number counterparties use to send funds.
+</ResponseField>
+
+<ResponseField name="bank_account_name" type="string">
+  The name registered on the account at the issuing bank — matches the `display_name` you submitted.
+</ResponseField>
+
+<ResponseField name="bank_name" type="string">
+  The name of the issuing bank (e.g., `"Nomba"`).
+</ResponseField>
+
+<ResponseField name="bank_code" type="string">
+  The CBN bank sort code for the issuing bank (e.g., `"000026"`).
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  The current status of the account. On creation this is always `"active"`.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  The UTC timestamp at which the account was provisioned.
+</ResponseField>
+
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "customer_id": "c1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "bank_account_number": "9876543210",
+  "bank_account_name": "Amara Okonkwo",
+  "bank_name": "Nomba",
+  "bank_code": "000026",
+  "status": "active",
+  "created_at": "2026-01-01T10:00:00Z"
+}
+```
+
+---
+
+## GET /accounts/\{id\} — Get Account
+
+```http
+GET /accounts/{id}
+Authorization: Bearer <key>
+```
+
+Retrieve a single virtual account by its UUID. The response has the same shape as the [Provision Account](#post-accounts-provision-account) response.
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  The unique identifier of the virtual account you want to retrieve.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="id" type="string (UUID)">
+  The unique identifier for the virtual account.
+</ResponseField>
+
+<ResponseField name="customer_id" type="string (UUID)">
+  The UUID of the customer this account belongs to.
+</ResponseField>
+
+<ResponseField name="bank_account_number" type="string">
+  The 10-digit NUBAN account number assigned to this virtual account.
+</ResponseField>
+
+<ResponseField name="bank_account_name" type="string">
+  The name registered on the account at the issuing bank.
+</ResponseField>
+
+<ResponseField name="bank_name" type="string">
+  The name of the issuing bank.
+</ResponseField>
+
+<ResponseField name="bank_code" type="string">
+  The CBN bank sort code for the issuing bank.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  The current status of the account: `"active"` or `"closed"`.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  The UTC timestamp at which the account was provisioned.
+</ResponseField>
+
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "customer_id": "c1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "bank_account_number": "9876543210",
+  "bank_account_name": "Amara Okonkwo",
+  "bank_name": "Nomba",
+  "bank_code": "000026",
+  "status": "active",
+  "created_at": "2026-01-01T10:00:00Z"
+}
+```
+
+---
+
+## GET /accounts — List Accounts
+
+```http
+GET /accounts?limit=20&offset=0
+Authorization: Bearer <key>
+```
+
+Return a paginated list of all virtual accounts in your workspace.
+
+### Query parameters
+
+<ParamField query="limit" type="integer">
+  The maximum number of accounts to return per page. Defaults to `20`.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  The number of records to skip before returning results. Defaults to `0`.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="accounts" type="array">
+  An array of account objects. Each object has the same shape as the [Get Account](#get-accounts-id-get-account) response.
+</ResponseField>
+
+<ResponseField name="limit" type="integer">
+  The `limit` value applied to this response.
+</ResponseField>
+
+<ResponseField name="offset" type="integer">
+  The `offset` value applied to this response.
+</ResponseField>
+
+```json
+{
+  "accounts": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "customer_id": "c1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "bank_account_number": "9876543210",
+      "bank_account_name": "Amara Okonkwo",
+      "bank_name": "Nomba",
+      "bank_code": "000026",
+      "status": "active",
+      "created_at": "2026-01-01T10:00:00Z"
+    }
+  ],
+  "limit": 20,
+  "offset": 0
+}
+```
+
+<Tip>
+  To fetch the next page, increment `offset` by the value of `limit`. For example, for results 21–40, send `?limit=20&offset=20`.
+</Tip>
+
+---
+
+## PUT /accounts/\{id\} — Update Account
+
+```http
+PUT /accounts/{id}
+Authorization: Bearer <key>
+```
+
+Update a mutable field on an existing virtual account. Currently, you can update the `display_name`.
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  The unique identifier of the virtual account to update.
+</ParamField>
+
+### Request body
+
+<ParamField body="display_name" type="string">
+  The updated name to register on the bank account. Counterparties will see this name on inbound transfer confirmations after the update takes effect.
+</ParamField>
+
+### Request example
+
+```json
+{
+  "display_name": "Amara O. Okonkwo"
+}
+```
+
+### Response `200 OK`
+
+<ResponseField name="status" type="string">
+  Confirms the update was applied. Always `"updated"` on success.
+</ResponseField>
+
+```json
+{
+  "status": "updated"
+}
+```
+
+---
+
+## GET /accounts/\{id\}/balance — Get Balance
+
+```http
+GET /accounts/{id}/balance
+Authorization: Bearer <key>
+```
+
+Retrieve the current available balance for a virtual account.
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  The unique identifier of the virtual account whose balance you want to retrieve.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="AccountID" type="string (UUID)">
+  The unique identifier of the virtual account.
+</ResponseField>
+
+<ResponseField name="Balance" type="integer">
+  The current available balance, expressed in **kobo**. Divide by 100 to convert to naira.
+</ResponseField>
+
+<ResponseField name="Currency" type="string">
+  The ISO 4217 currency code for the account. Always `"NGN"` for Nigerian naira.
+</ResponseField>
+
+<ResponseField name="AsOf" type="string (ISO 8601)">
+  The UTC timestamp at which the balance was calculated.
+</ResponseField>
+
+```json
+{
+  "AccountID": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "Balance": 250000,
+  "Currency": "NGN",
+  "AsOf": "2026-01-01T12:00:00Z"
+}
+```
+
+<Note>
+  `Balance` is in kobo. In the example above, `250000` kobo equals ₦2,500.00. Always divide by `100` before displaying amounts to end users.
+</Note>
+
+---
+
+## GET /accounts/\{id\}/transactions — List Transactions
+
+```http
+GET /accounts/{id}/transactions?limit=20&offset=0
+Authorization: Bearer <key>
+```
+
+Return a paginated list of ledger entries for a virtual account, ordered from most recent to oldest.
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  The unique identifier of the virtual account whose transactions you want to list.
+</ParamField>
+
+### Query parameters
+
+<ParamField query="limit" type="integer">
+  The maximum number of entries to return per page. Defaults to `20`.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  The number of entries to skip before returning results. Defaults to `0`.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="Entries" type="array">
+  An array of ledger entry objects.
+
+  <Expandable title="Entry fields">
+    <ResponseField name="id" type="string (UUID)">
+      The unique identifier for this ledger entry.
+    </ResponseField>
+
+    <ResponseField name="account_id" type="string (UUID)">
+      The UUID of the virtual account this entry belongs to.
+    </ResponseField>
+
+    <ResponseField name="direction" type="string">
+      Whether this entry increased or decreased the balance. Either `"credit"` (funds received) or `"debit"` (funds sent).
+    </ResponseField>
+
+    <ResponseField name="amount" type="integer">
+      The value of this entry in **kobo**. Divide by 100 for naira.
+    </ResponseField>
+
+    <ResponseField name="currency" type="string">
+      The ISO 4217 currency code. Always `"NGN"`.
+    </ResponseField>
+
+    <ResponseField name="entry_type" type="string">
+      A machine-readable classification of the transaction. For example: `"inbound_credit"`.
+    </ResponseField>
+
+    <ResponseField name="external_ref" type="string">
+      The external reference assigned by the bank or payment network (e.g., `"API-VACT_TRA-..."`).
+    </ResponseField>
+
+    <ResponseField name="narration" type="string">
+      The human-readable transfer narration as supplied by the sender.
+    </ResponseField>
+
+    <ResponseField name="created_at" type="string (ISO 8601)">
+      The UTC timestamp at which this entry was recorded.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="Limit" type="integer">
+  The `limit` value applied to this response.
+</ResponseField>
+
+<ResponseField name="Offset" type="integer">
+  The `offset` value applied to this response.
+</ResponseField>
+
+```json
+{
+  "Entries": [
+    {
+      "id": "e1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "account_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "direction": "credit",
+      "amount": 100000,
+      "currency": "NGN",
+      "entry_type": "inbound_credit",
+      "external_ref": "API-VACT_TRA-abc123",
+      "narration": "Transfer from John Doe",
+      "created_at": "2026-01-01T11:00:00Z"
+    }
+  ],
+  "Limit": 20,
+  "Offset": 0
+}
+```
+
+---
+
+## GET /accounts/\{id\}/statement — Account Statement
+
+```http
+GET /accounts/{id}/statement?limit=20&offset=0
+Authorization: Bearer <key>
+```
+
+Generate a paginated account statement with opening and closing balances, and a `running_balance` per entry. Unlike the raw transactions endpoint, the statement is designed for reconciliation — every entry includes a cumulative running balance that remains accurate across paginated pages.
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  The unique identifier of the virtual account for which you want a statement.
+</ParamField>
+
+### Query parameters
+
+<ParamField query="limit" type="integer">
+  The maximum number of entries to return per page. Defaults to `20`.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  The number of entries to skip. Defaults to `0`.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="account_id" type="string (UUID)">
+  The unique identifier of the virtual account.
+</ResponseField>
+
+<ResponseField name="opening_balance" type="integer">
+  The account balance at the start of the statement period, in **kobo**.
+</ResponseField>
+
+<ResponseField name="closing_balance" type="integer">
+  The account balance at the end of the statement period, in **kobo**.
+</ResponseField>
+
+<ResponseField name="currency" type="string">
+  The ISO 4217 currency code. Always `"NGN"`.
+</ResponseField>
+
+<ResponseField name="entries" type="array">
+  An array of statement entry objects. Each entry includes all fields from [List Transactions](#get-accounts-id-transactions-list-transactions), plus:
+
+  <Expandable title="Additional statement entry field">
+    <ResponseField name="running_balance" type="integer">
+      The cumulative account balance after this entry was applied, in **kobo**. This value is consistent and accurate across all pages of a paginated statement request.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="limit" type="integer">
+  The `limit` value applied to this response.
+</ResponseField>
+
+<ResponseField name="offset" type="integer">
+  The `offset` value applied to this response.
+</ResponseField>
+
+```json
+{
+  "account_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "opening_balance": 0,
+  "closing_balance": 250000,
+  "currency": "NGN",
+  "entries": [
+    {
+      "id": "e1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "direction": "credit",
+      "amount": 250000,
+      "running_balance": 250000,
+      "entry_type": "inbound_credit",
+      "narration": "Transfer from John Doe",
+      "created_at": "2026-01-01T11:00:00Z"
+    }
+  ],
+  "limit": 20,
+  "offset": 0
+}
+```
+
+<Note>
+  The `running_balance` on each statement entry is computed server-side and stays accurate even when you page through results with a non-zero `offset`. You can rely on it for reconciliation without re-fetching earlier pages.
+</Note>
+
+---
+
+## POST /accounts/\{id\}/close — Close Account
+
+```http
+POST /accounts/{id}/close
+Authorization: Bearer <key>
+```
+
+Permanently close a virtual account. No request body is required.
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  The unique identifier of the virtual account you want to close.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="status" type="string">
+  Confirms the account has been closed. Always `"closed"` on success.
+</ResponseField>
+
+```json
+{
+  "status": "closed"
+}
+```
+
+<Warning>
+  **Closure is irreversible.** Once you close an account you cannot reopen it. Any inbound payments sent to the account number after closure are not returned to the sender — they are routed to a suspense ledger and will require manual intervention to resolve. Make sure you want to permanently retire the account before calling this endpoint.
+</Warning>

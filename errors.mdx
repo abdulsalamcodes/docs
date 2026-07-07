@@ -1,0 +1,98 @@
+---
+title: "API Error Codes and Troubleshooting Guide"
+sidebarTitle: "Errors"
+description: "Understand Ancra's error envelope format, every HTTP status code the API returns, and how to debug the most common failure scenarios."
+---
+
+Ancra uses standard HTTP status codes to indicate the outcome of every request. Whether a request succeeds or fails, the response body always follows the same structure, making it straightforward to handle errors programmatically without inspecting response text for clues.
+
+## Error Envelope
+
+All error responses from the Ancra API use the following JSON envelope. Parse `error.message` to get a human-readable description of what went wrong:
+
+```json
+{
+  "error": {
+    "message": "human-readable description"
+  }
+}
+```
+
+Successful responses (`200`, `201`) do **not** include an `error` key. If the `error` key is present, the request did not complete as intended.
+
+## HTTP Status Codes
+
+| Code | Meaning |
+|---|---|
+| `200` | **Success** — the request completed and the response body contains the result. |
+| `201` | **Resource created** — a new record was created successfully. |
+| `400` | **Bad request** — invalid input, missing required fields, or malformed JSON. |
+| `401` | **Unauthorized** — the `Authorization` header is missing, the API key is invalid, or a webhook signature failed verification. |
+| `404` | **Not found** — the requested resource does not exist or is not accessible with your key. |
+| `422` | **Unprocessable** — the request is syntactically valid but semantically incorrect (for example, insufficient funds for a transfer). |
+| `502` | **Bad gateway** — the upstream payment provider returned an error. The Ancra API itself is healthy, but the provider could not fulfil the request. |
+| `500` | **Internal server error** — an unexpected error occurred on the Ancra server. |
+
+## Common Errors
+
+### Missing or Invalid API Key
+
+**HTTP status:** `401`
+
+```json
+{ "error": { "message": "unauthorized" } }
+```
+
+This error means the `Authorization: Bearer <key>` header is absent, the key has been revoked, or the key value is malformed. Verify that:
+
+- The header is present on the request.
+- The key begins with `ancra_` and has not been revoked via the admin endpoint.
+- You are not accidentally sending a truncated or URL-encoded key value.
+
+---
+
+### Insufficient Funds (Transfer)
+
+**HTTP status:** `422`
+
+```json
+{ "error": { "message": "insufficient funds" } }
+```
+
+The source account's current ledger balance is less than the requested transfer amount (both expressed in kobo). Query the account balance before initiating a transfer to confirm there are enough funds, and remember that amounts are in kobo — ₦1,000 = `100000`.
+
+---
+
+### Invalid UUID
+
+**HTTP status:** `400`
+
+```json
+{ "error": { "message": "id must be a valid UUID" } }
+```
+
+Account and customer IDs in Ancra are UUID v4 strings (e.g. `a1b2c3d4-e5f6-...`). This error appears when the ID you supplied is missing, empty, or does not conform to the UUID v4 format. Double-check that you are reading the `id` field from the correct response object and that no characters have been accidentally trimmed.
+
+---
+
+### Transfer Rejected by Provider
+
+**HTTP status:** `502`
+
+```json
+{ "error": { "message": "transfer rejected by payment provider" } }
+```
+
+Nomba declined the outbound transfer instruction. When this happens, Ancra automatically reverses the ledger debit — your customer's balance is restored in full. Common causes include:
+
+- An invalid or non-existent destination account number.
+- The destination account is frozen or restricted.
+- Daily or per-transaction transfer limits on the destination account have been exceeded.
+
+Retry the transfer after verifying the destination account details, or ask your customer to try a different account.
+
+---
+
+<Tip>
+  **Best practice for error handling:** Always check the HTTP status code first to categorise the failure (`4xx` vs `5xx`, client error vs server/provider error). Then parse `error.message` to surface a meaningful explanation in your logs or user interface. Avoid matching on the message string directly in code — treat it as a display-only field that may change between releases.
+</Tip>

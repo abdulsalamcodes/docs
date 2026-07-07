@@ -1,0 +1,240 @@
+---
+title: "Send Bank Transfers from Virtual Accounts"
+sidebarTitle: "Send Transfers"
+description: "Initiate outbound NGN transfers from a customer's virtual account to any Nigerian bank, with atomic ledger debits and automatic reversal on failure."
+---
+
+Ancra lets you send money from a customer's virtual account to any Nigerian bank account through a single API call. Before forwarding the transfer instruction to Nomba, Ancra debits the customer's ledger atomically — so the account balance stays accurate even if the network call to Nomba fails or times out. If Nomba rejects the transfer for any reason, the debit is automatically reversed and the customer's balance is restored.
+
+---
+
+## How It Works
+
+<Steps>
+  <Step title="Validate the destination account">
+    Call `POST /transfers/lookup` with the recipient's account number and bank code. Ancra returns the registered account name. Verify that name with your user before proceeding — a mismatched name is the clearest sign of a wrong account number.
+  </Step>
+  <Step title="Initiate the transfer">
+    Call `POST /accounts/{id}/transfers` with the amount, destination details, and a unique reference. Ancra validates all fields before touching the ledger.
+  </Step>
+  <Step title="Ancra debits the customer's ledger atomically">
+    If the account has sufficient funds, Ancra posts an `outbound_debit` entry. The balance is reduced before any network call leaves the system, keeping the ledger consistent at all times.
+  </Step>
+  <Step title="Ancra submits the transfer to Nomba">
+    Ancra forwards the transfer to Nomba's `/v2/transfers/bank` endpoint. On success, the Nomba transaction details are returned to you. On failure, Ancra immediately posts a compensating `transfer_reversal` credit to restore the customer's balance.
+  </Step>
+</Steps>
+
+---
+
+## Step 1: Look Up the Recipient
+
+Before sending any funds, resolve the recipient's account number to a registered name. This protects your customers from sending money to the wrong account.
+
+```bash
+curl -X POST https://your-deployment.onrender.com/transfers/lookup \
+  -H "Authorization: Bearer <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "account_number": "0123456789",
+    "bank_code": "044"
+  }'
+```
+
+**Request fields**
+
+<ParamField body="account_number" type="string" required>
+  The recipient's 10-digit NUBAN account number.
+</ParamField>
+
+<ParamField body="bank_code" type="string" required>
+  The 3-digit CBN bank code for the recipient's bank. See the [bank codes table](#bank-codes) below.
+</ParamField>
+
+**Response**
+
+```json
+{
+  "account_number": "0123456789",
+  "account_name": "Jane Doe"
+}
+```
+
+<Tip>
+  Always show the resolved `account_name` to your user and ask them to confirm it matches their intended recipient. An unexpected name is the most reliable signal that the account number or bank code is wrong, and catching it here costs nothing compared to sending funds to the wrong person.
+</Tip>
+
+**Lookup errors**
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | Missing or malformed fields in the request body |
+| `502`  | Nomba could not resolve the account — check the account number and bank code |
+
+### Bank Codes
+
+Common Nigerian bank codes supported by Nomba:
+
+| Bank | Code |
+|------|------|
+| Access Bank | `044` |
+| GTBank | `058` |
+| First Bank | `011` |
+| Zenith Bank | `057` |
+| UBA | `033` |
+| Kuda | `090267` |
+| OPay | `305` |
+| PalmPay | `999991` |
+| Moniepoint | `50515` |
+
+For the complete list of supported banks, call `GET /transfers/banks`.
+
+---
+
+## Step 2: Initiate the Transfer
+
+Once you have confirmed the recipient's name, send the transfer from the customer's virtual account. Replace `{id}` with the Ancra account UUID.
+
+```bash
+curl -X POST https://your-deployment.onrender.com/accounts/a1b2c3d4-e5f6-7890-abcd-ef0123456789/transfers \
+  -H "Authorization: Bearer <key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 500000,
+    "narration": "Invoice payment #1042",
+    "reference": "TXN-2026-0042",
+    "sender_name": "Acme Corp",
+    "destination_bank": "044",
+    "destination_account": "0123456789",
+    "destination_name": "Jane Doe"
+  }'
+```
+
+**Request fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `amount` | integer | Yes | Amount to send, in **kobo** |
+| `narration` | string | No | Payment note shown to the recipient |
+| `reference` | string | Yes | Your unique reference — used as the idempotency key with Nomba |
+| `sender_name` | string | Yes | Name displayed as the sender on the recipient's bank statement |
+| `destination_bank` | string | Yes | 3-digit CBN bank code for the recipient's bank |
+| `destination_account` | string | Yes | Recipient's 10-digit NUBAN account number |
+| `destination_name` | string | Yes | Account name returned by the lookup step |
+
+**Response `200 OK`**
+
+```json
+{
+  "status": "submitted",
+  "nomba_transaction": {
+    "id": "TXN-abc123",
+    "amount": 5000.00,
+    "fee": 26.88,
+    "type": "bank_transfer",
+    "status": "successful",
+    "timeCreated": "2026-01-01T12:00:00Z",
+    "meta": {
+      "merchantTxRef": "TXN-2026-0042",
+      "rrn": "060012345678"
+    }
+  }
+}
+```
+
+**Response fields**
+
+<ResponseField name="status" type="string">
+  `submitted` — the transfer was accepted and forwarded to Nomba.
+</ResponseField>
+
+<ResponseField name="nomba_transaction.id" type="string">
+  Nomba's internal transaction identifier.
+</ResponseField>
+
+<ResponseField name="nomba_transaction.amount" type="number">
+  The transfer amount in **naira** (Nomba returns naira; Ancra converts your kobo input before forwarding).
+</ResponseField>
+
+<ResponseField name="nomba_transaction.fee" type="number">
+  The transfer fee charged by Nomba, in naira. See [Fees](#fees) below.
+</ResponseField>
+
+<ResponseField name="nomba_transaction.status" type="string">
+  Nomba's own processing status for the transfer — typically `successful`.
+</ResponseField>
+
+<ResponseField name="nomba_transaction.meta.merchantTxRef" type="string">
+  The `reference` value you supplied, echoed back by Nomba. Use this to correlate Ancra transfers with Nomba settlement records.
+</ResponseField>
+
+<ResponseField name="nomba_transaction.meta.rrn" type="string">
+  The Retrieval Reference Number assigned by the NIP network to this transfer.
+</ResponseField>
+
+---
+
+## Amounts
+
+All amounts you send to the Ancra API must be in **kobo** (integer). Ancra converts to naira internally before forwarding to Nomba.
+
+| Kobo value | NGN equivalent |
+|-----------|----------------|
+| `100` | ₦1 |
+| `10000` | ₦100 |
+| `100000` | ₦1,000 |
+| `500000` | ₦5,000 |
+| `1000000` | ₦10,000 |
+
+<Note>
+  Never send fractional kobo values. The `amount` field must be a whole integer. If your application works in naira, multiply by `100` and round down before calling the API.
+</Note>
+
+---
+
+## Transfer Reference
+
+The `reference` field is your idempotency key. It is sent to Nomba as `merchantTxRef` and is used for deduplication on both sides.
+
+- Each `reference` must be **unique per transfer**. Reusing a reference on a different transfer will cause Nomba to reject the second request.
+- A good pattern is a UUID (`crypto.randomUUID()`) or a deterministic string like `TXN-{customerId}-{timestamp}`.
+- If your system retries a failed request with the **same** reference and the original transfer was already submitted, Nomba's deduplication ensures it is not processed twice.
+
+---
+
+## Failure & Reversal
+
+If Nomba rejects the transfer after Ancra has already debited the customer's ledger, Ancra automatically posts a `transfer_reversal` credit entry to restore the balance. You can see this in the transaction list:
+
+```json
+{
+  "id": "e9f8g7h6-...",
+  "direction": "credit",
+  "amount": 500000,
+  "entry_type": "transfer_reversal",
+  "narration": "Reversal: TXN-2026-0042",
+  "created_at": "2026-01-01T12:01:00Z"
+}
+```
+
+<Warning>
+  If the customer's account has insufficient funds, Ancra returns a `422 Unprocessable Entity` with the body `"insufficient funds"` — no debit is made and no transfer is submitted. Ensure you check the account balance with `GET /accounts/{id}/balance` before initiating large transfers if your application does not maintain its own balance state.
+</Warning>
+
+**Transfer error codes**
+
+| Status | Body | Meaning |
+|--------|------|---------|
+| `400` | `"missing required fields: ..."` | One or more required fields are absent or malformed |
+| `422` | `"insufficient funds"` | The account balance is below the requested amount |
+| `502` | `"transfer rejected by payment provider"` | Nomba rejected the transfer; the ledger debit has already been reversed |
+
+---
+
+## Fees
+
+The `fee` field in the `nomba_transaction` object shows the transfer fee charged by Nomba for that transaction, expressed in **naira**. This fee is separate from the `amount` you specified and is deducted by Nomba from your Nomba account balance rather than from the virtual account ledger.
+
+<Info>
+  Fee amounts vary based on the transfer value and Nomba's current fee schedule. Check your Nomba dashboard or contact Nomba support for the current fee tiers.
+</Info>

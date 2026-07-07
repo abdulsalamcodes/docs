@@ -1,0 +1,115 @@
+---
+title: "KYC Tiers: Customer Verification Levels in Ancra"
+sidebarTitle: "KYC Tiers"
+description: "Understand Ancra's three-tier KYC framework aligned with CBN guidelines — from basic no-ID accounts to full NIN-verified profiles with maximum limits."
+---
+
+KYC (Know Your Customer) tiers control how much identity information has been collected and verified for a customer. Each tier corresponds to a progressively higher level of trust, and unlocks higher transaction and balance limits on the customer's virtual account. Ancra's tier model aligns with the **Central Bank of Nigeria's tiered KYC framework** for payment service providers.
+
+You set a customer's KYC tier at creation time. Choosing the right tier upfront is important — read this page before creating customers in production.
+
+---
+
+## The Three Tiers
+
+| Tier | Level | Identity Required | Transaction & Balance Limits |
+|------|-------|-------------------|-------------------------------|
+| `1`  | **Basic** | No ID required | Low — suitable for low-volume, low-value use cases |
+| `2`  | **Intermediate** | BVN verified | Medium — appropriate for regular consumer use |
+| `3`  | **Full KYC** | NIN + address verified | Full — no CBN-imposed restrictions |
+
+<Info>
+  Specific naira limit values are set by the CBN and subject to regulatory change. Refer to your Ancra commercial agreement and the CBN's tiered KYC guidelines for the current figures applicable to your licence category.
+</Info>
+
+---
+
+## Setting a Tier
+
+Pass the `kyc_tier` field in the body of your `POST /customers` request:
+
+```http
+POST /customers
+Authorization: Bearer <key>
+Content-Type: application/json
+```
+
+```json
+{
+  "kyc_tier": 2
+}
+```
+
+Valid values are `1`, `2`, or `3`. If you omit `kyc_tier`, it defaults to `1`.
+
+---
+
+## BVN and NIN Requirements
+
+Tier assignment at customer creation is only the first step. When you subsequently provision a virtual account for that customer, you must supply the corresponding identity credentials:
+
+- **Tier 1** — no additional identity fields required.
+- **Tier 2** — you must include the customer's `bvn` (Bank Verification Number) in the `POST /accounts` request body.
+- **Tier 3** — you must include both `bvn` and `nin` (National Identification Number) in the `POST /accounts` request body.
+
+```json
+{
+  "customer_id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+  "display_name": "Amara Okonkwo",
+  "customer_email": "amara@example.com",
+  "phone_number": "08012345678",
+  "bvn": "12345678901",
+  "nin": "98765432100"
+}
+```
+
+<Note>
+  BVN and NIN are passed at **account provisioning time** (`POST /accounts`), not at customer creation time (`POST /customers`). Make sure you have collected and securely stored these values before calling the account endpoint.
+</Note>
+
+---
+
+## Upgrading a Tier
+
+<Warning>
+  **Customer tiers are immutable after creation** in the current version of the Ancra API. Once you create a customer with `kyc_tier: 1`, you cannot upgrade that record to Tier 2 or Tier 3 in place.
+</Warning>
+
+To upgrade a customer's KYC tier today, you must:
+
+<Steps>
+  <Step title="Create a new customer record">
+    Call `POST /customers` with the desired higher `kyc_tier` value.
+  </Step>
+  <Step title="Provision a new virtual account">
+    Call `POST /accounts` with the new `customer_id` and the required identity credentials (BVN / NIN) for that tier.
+  </Step>
+  <Step title="Close the old account">
+    Call `POST /accounts/{id}/close` on the previous account once you have migrated any active balance or pending activity.
+  </Step>
+</Steps>
+
+<Info>
+  Future versions of the Ancra API will support in-place tier upgrades via `PUT /customers/{id}`, removing the need to create a new customer record.
+</Info>
+
+---
+
+## Plan Ahead
+
+<Warning>
+  Choose the correct KYC tier when you first create a customer — you cannot change it later without creating a new record and migrating accounts. If your product allows customers to start at Tier 1 and later verify to Tier 2 or Tier 3, design your onboarding flow to re-provision accounts at the appropriate time and communicate this to your users.
+</Warning>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Customers" icon="user" href="/concepts/customers">
+    Review how to create and retrieve customer records, including the full Customer object reference.
+  </Card>
+  <Card title="Virtual Accounts" icon="building-columns" href="/concepts/virtual-accounts">
+    Learn how to provision a dedicated bank account number and pass BVN/NIN credentials at account creation time.
+  </Card>
+</CardGroup>

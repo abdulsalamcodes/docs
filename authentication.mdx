@@ -1,0 +1,67 @@
+---
+title: "Authenticate Requests to the Ancra API"
+sidebarTitle: "Authentication"
+description: "Learn how Ancra API keys work, how to create and revoke them, and how to attach a Bearer token to every API request."
+---
+
+Every request to the Ancra API must be authenticated. Ancra uses **opaque Bearer tokens** — API keys you create through the admin interface and attach to each request via the standard `Authorization` header. There are no JWTs, OAuth flows, or session cookies involved.
+
+## Getting an API Key
+
+API keys are created through the `/admin/api-keys` endpoint. This endpoint requires a separate `Admin-Secret` header — a shared secret you set when you deploy Ancra — rather than an API key itself. Keep your admin secret out of client-side code and version control.
+
+```bash
+curl -X POST https://your-deployment.onrender.com/admin/api-keys \
+  -H "Admin-Secret: your-admin-secret" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "production-key"}'
+```
+
+Ancra responds with the new key object, including the full plaintext key:
+
+```json
+{
+  "id": "3f2a1b...",
+  "name": "production-key",
+  "key": "ancra_live_xxxxxxxxxxxxxxxxxxxx",
+  "created_at": "2026-01-01T00:00:00Z"
+}
+```
+
+<Warning>
+  **Save the key immediately — it is only shown once.** After creation, Ancra stores only a SHA-256 hash of the key. If you navigate away or lose the value, you will not be able to retrieve it again. Revoke the key and create a new one instead.
+</Warning>
+
+## Making Authenticated Requests
+
+Include your API key as a Bearer token in the `Authorization` header on every request to the Ancra API:
+
+```bash
+curl https://your-deployment.onrender.com/accounts \
+  -H "Authorization: Bearer ancra_live_xxxxxxxxxxxxxxxxxxxx"
+```
+
+Requests that are missing the header, or that supply a revoked or malformed key, will receive a `401 Unauthorized` response. See [Errors](/errors) for the full error envelope format.
+
+## Revoking a Key
+
+If a key is compromised or no longer needed, revoke it immediately using its `id`. Revocation is permanent and takes effect instantly — any in-flight requests using that key will start failing with `401`.
+
+```bash
+curl -X DELETE https://your-deployment.onrender.com/admin/api-keys/{id} \
+  -H "Admin-Secret: your-admin-secret"
+```
+
+Replace `{id}` with the `id` value returned when the key was created.
+
+## Key Format
+
+Ancra API keys follow a predictable structure:
+
+- **Prefix:** All keys begin with `ancra_` so they are easy to identify in logs and configuration files.
+- **Length:** The suffix is exactly 32 characters, making the full key 38 characters long (including the `ancra_` prefix).
+- **Storage:** Keys are stored server-side as SHA-256 hashes. Ancra never stores the plaintext value after the initial creation response.
+
+<Note>
+  If you lose an API key, there is no recovery path — the plaintext is gone. Revoke the lost key using its `id` and create a replacement. Update any services or environment variables that were using the old key before revoking it to avoid downtime.
+</Note>

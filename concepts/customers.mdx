@@ -1,0 +1,132 @@
+---
+title: "Customers: Managing End-User Records in Ancra"
+sidebarTitle: "Customers"
+description: "Learn about the Customer object in Ancra — the entity that owns virtual accounts — and how to create, retrieve, and manage customer records."
+---
+
+A **Customer** is the central entity in Ancra. Every virtual account must belong to a customer, and all payment activity is ultimately attributed to a customer record. Before you can provision a bank account number, you need a customer to own it.
+
+---
+
+## The Customer Object
+
+When you create or retrieve a customer, Ancra returns the following JSON object:
+
+```json
+{
+  "id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+  "kyc_tier": 1,
+  "created_at": "2026-01-01T00:00:00Z"
+}
+```
+
+<ResponseField name="id" type="string (UUID)" required>
+  The unique identifier for this customer record. Use this value as `customer_id` when provisioning a virtual account.
+</ResponseField>
+
+<ResponseField name="kyc_tier" type="integer">
+  The customer's KYC verification level. Valid values are `1`, `2`, or `3`. Defaults to `1` if not specified at creation. See [KYC Tiers](/concepts/kyc-tiers) for a full breakdown of what each tier allows.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  The UTC timestamp at which the customer record was created.
+</ResponseField>
+
+---
+
+## Creating a Customer
+
+To create a customer, send a `POST` request to `/customers` with an optional `kyc_tier` in the request body.
+
+```http
+POST /customers
+Authorization: Bearer <key>
+Content-Type: application/json
+```
+
+```json
+{
+  "kyc_tier": 1
+}
+```
+
+<Note>
+  `kyc_tier` defaults to `1` if you omit it from the request body. If you know upfront that your customer requires higher transaction limits, set the correct tier now — tiers cannot be changed after creation.
+</Note>
+
+A successful request returns a `201 Created` response with the new customer object:
+
+```json
+{
+  "id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+  "kyc_tier": 1,
+  "created_at": "2026-01-01T00:00:00Z"
+}
+```
+
+Store the returned `id` — you will use it as the `customer_id` in the subsequent account provisioning request.
+
+---
+
+## Retrieving Customers
+
+### Get a single customer
+
+Retrieve a specific customer by their UUID:
+
+```http
+GET /customers/{id}
+Authorization: Bearer <key>
+```
+
+```json
+{
+  "id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+  "kyc_tier": 1,
+  "created_at": "2026-01-01T00:00:00Z"
+}
+```
+
+### List all customers
+
+Retrieve a paginated list of all customers in your Ancra environment:
+
+```http
+GET /customers?limit=20&offset=0
+Authorization: Bearer <key>
+```
+
+```json
+{
+  "customers": [...],
+  "limit": 20,
+  "offset": 0
+}
+```
+
+Use `limit` and `offset` to page through large result sets. The default page size is `20`.
+
+---
+
+## One Account Per Customer
+
+Each customer can hold **at most one active virtual account** at any time. If you call `POST /accounts` for a customer that already has an active account, Ancra returns the existing account rather than creating a duplicate.
+
+<Tip>
+  This idempotent behaviour makes it safe to call account provisioning multiple times without worrying about creating ghost accounts. If your system retries on failure, the response will always be consistent.
+</Tip>
+
+This design also means you can use a customer's `id` as a stable, durable reference for the bank account number associated with that end user throughout their lifecycle in your platform.
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="KYC Tiers" icon="shield-check" href="/concepts/kyc-tiers">
+    Understand the three verification levels, their transaction limits, and the BVN/NIN requirements for Tier 2 and Tier 3 customers.
+  </Card>
+  <Card title="Virtual Accounts" icon="building-columns" href="/concepts/virtual-accounts">
+    Learn how to provision a dedicated Nigerian bank account number for a customer.
+  </Card>
+</CardGroup>

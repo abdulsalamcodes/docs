@@ -1,0 +1,135 @@
+---
+title: "Virtual Accounts: Dedicated Nigerian Bank Numbers"
+sidebarTitle: "Virtual Accounts"
+description: "Learn how Ancra provisions real 10-digit Nigerian bank account numbers, routes NIP inbound payments to your ledger, and manages account lifecycle."
+---
+
+A **Virtual Account** — or DVA (Dedicated Virtual Account) — is a real Nigerian bank account number assigned exclusively to one customer. Anyone can transfer funds to that number via NIP (NIBSS Instant Payment), exactly as they would to any regular bank account. When a payment arrives, Nomba fires a webhook to Ancra, which verifies the transaction and automatically credits the customer's ledger.
+
+Virtual accounts are the foundation of Ancra's payment infrastructure. Every receivable in the system flows through one.
+
+---
+
+## The Account Object
+
+When you provision or retrieve a virtual account, Ancra returns the following JSON:
+
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "customer_id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+  "account_ref": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+  "bank_account_number": "9876543210",
+  "bank_account_name": "Amara Okonkwo",
+  "status": "active",
+  "created_at": "2026-01-01T00:00:00Z"
+}
+```
+
+<ResponseField name="id" type="string (UUID)" required>
+  Ancra's internal identifier for this virtual account. Use this in API calls to fetch balance, list transactions, or close the account.
+</ResponseField>
+
+<ResponseField name="customer_id" type="string (UUID)" required>
+  The UUID of the customer that owns this account. Links back to your Customer record.
+</ResponseField>
+
+<ResponseField name="account_ref" type="string">
+  The idempotency key used with Nomba when provisioning the underlying bank account. This value equals the owning customer's UUID.
+</ResponseField>
+
+<ResponseField name="bank_account_number" type="string">
+  The 10-digit Nigerian bank account number. Share this with your end user so they can receive funds — it works with any NIP-connected bank or payment app.
+</ResponseField>
+
+<ResponseField name="bank_account_name" type="string">
+  The registered account holder name as it appears on the Nomba network. This is the `display_name` you supplied at provisioning time.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  The current lifecycle state of the account. Either `active` or `closed`. See [Account Status](#account-status) below.
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  The UTC timestamp at which the account was provisioned.
+</ResponseField>
+
+---
+
+## How Payments Work
+
+When a sender initiates a NIP transfer to your customer's `bank_account_number`, the following happens automatically:
+
+<Steps>
+  <Step title="NIP transfer arrives at Nomba">
+    The sender's bank routes the transfer over the NIBSS Instant Payment rails to Nomba, which holds the underlying account.
+  </Step>
+  <Step title="Nomba fires a webhook">
+    Nomba sends a signed inbound-payment webhook to Ancra containing the transaction details, amount, and sender narration.
+  </Step>
+  <Step title="Ancra verifies and credits">
+    Ancra validates the webhook signature, matches the account number to the correct virtual account record, and posts an `inbound_credit` ledger entry. The customer's balance is updated in real time.
+  </Step>
+</Steps>
+
+You do not need to poll for incoming payments. Configure your own webhook endpoint in the Ancra dashboard to receive notifications each time a credit posts to any of your customers' accounts.
+
+<Tip>
+  See the [Receive Payments guide](/guides/receive-payments) for a step-by-step walkthrough of webhook setup, signature verification, and processing inbound credits.
+</Tip>
+
+---
+
+## Account Status
+
+Every virtual account has a `status` field that reflects its lifecycle state.
+
+| Status | Meaning |
+|--------|---------|
+| `active` | The account is fully operational. It can receive inbound NIP payments and be used to initiate outbound transfers. |
+| `closed` | The account has been permanently deactivated. No outbound transfers can be initiated, and inbound payments are routed to a suspense ledger rather than crediting the customer. |
+
+<Warning>
+  **Closure is irreversible via the API.** Once you close an account, you cannot reopen it. Inbound payments received after closure are captured in Ancra's suspense ledger and require manual review to be returned to the sender. Contact support with the Nomba transaction ID to initiate a return.
+</Warning>
+
+---
+
+## Currency & Amounts
+
+All virtual accounts are denominated in **NGN (Nigerian Naira)**. All monetary values across the Ancra API — balances, transaction amounts, and statement entries — are expressed in **kobo**, the smallest unit of the naira.
+
+| Kobo Value | NGN Equivalent |
+|------------|---------------|
+| `100`      | ₦1.00         |
+| `5000`     | ₦50.00        |
+| `100000`   | ₦1,000.00     |
+| `250000`   | ₦2,500.00     |
+| `1000000`  | ₦10,000.00    |
+
+To convert a kobo value to naira in your application, divide by `100`. Always store and transmit monetary values in kobo to avoid floating-point precision issues.
+
+---
+
+## Idempotency
+
+Each customer can have **at most one active virtual account** at any time. If you call `POST /accounts` for a customer that already has an active account, Ancra returns the existing account object unchanged — no duplicate account is created.
+
+This makes account provisioning safe to retry. Whether your request times out, your server restarts, or you simply call the endpoint twice, you will always get back the same account for a given `customer_id`.
+
+<Note>
+  If you need to replace a virtual account (for example, to upgrade KYC tier), close the existing account first and then provision a new one by creating a new Customer record with the desired tier.
+</Note>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Receive Payments" icon="arrow-down-to-line" href="/guides/receive-payments">
+    Set up webhooks to handle inbound NIP credits and reconcile payments in real time.
+  </Card>
+  <Card title="Ledger" icon="book-open" href="/concepts/ledger">
+    Understand how Ancra's double-entry ledger records every credit and debit against a virtual account.
+  </Card>
+</CardGroup>

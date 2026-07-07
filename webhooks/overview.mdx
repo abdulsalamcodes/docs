@@ -1,0 +1,101 @@
+---
+title: "Webhooks: Receive Real-Time Payment Notifications"
+sidebarTitle: "Overview"
+description: "Learn how Ancra receives and processes Nomba webhook events to automatically credit customer ledgers without polling."
+---
+
+When a customer sends a NIP transfer to their dedicated virtual account, Nomba immediately notifies Ancra via a signed HTTP event. Ancra verifies the signature, resolves the virtual account to the correct customer, and credits the ledger — all before responding to Nomba. You do not need to poll for new payments or build any custom payment listener.
+
+## How It Works
+
+When a payment lands, the following sequence occurs automatically:
+
+<Steps>
+  <Step title="Sender initiates a NIP transfer">
+    The sender's bank routes a NIP transfer to the virtual account number assigned to your customer.
+  </Step>
+  <Step title="Nomba receives the credit">
+    Nomba processes the inbound transfer and prepares a signed webhook payload containing the transaction details.
+  </Step>
+  <Step title="Nomba calls POST /webhooks/nomba">
+    Nomba sends an HTTP `POST` to your Ancra deployment at `/webhooks/nomba` with an HMAC-SHA256 signature in the request headers.
+  </Step>
+  <Step title="Ancra verifies the HMAC signature">
+    Ancra reconstructs the signing string from the payload fields and compares it against the `nomba-signature` header using a constant-time comparison. Requests with an invalid or missing signature are rejected with `401 Unauthorized`.
+  </Step>
+  <Step title="Ancra resolves the virtual account">
+    Ancra looks up `data.transaction.aliasAccountNumber` in its database to identify which customer owns that virtual account.
+  </Step>
+  <Step title="Ancra credits the customer ledger">
+    The transaction amount (in NGN) is credited to the customer's ledger and a `200 OK` response is returned to Nomba, completing the flow.
+  </Step>
+</Steps>
+
+## Setting Up Webhooks
+
+Before Nomba can send events to your Ancra deployment, you need to register the endpoint in the Nomba Dashboard and configure a shared secret.
+
+<Steps>
+  <Step title="Deploy Ancra with a public URL">
+    Your Ancra instance must be reachable from the internet. Nomba cannot call `localhost` or private network addresses. Use a domain like `https://payments.yourapp.com`.
+  </Step>
+  <Step title="Open the Nomba Dashboard">
+    Log in to the [Nomba Dashboard](https://dashboard.nomba.com) and navigate to **Developer → Webhook Setup**.
+  </Step>
+  <Step title="Set your webhook URL">
+    Enter the full URL to your Ancra webhook receiver:
+
+    ```
+    https://your-domain.com/webhooks/nomba
+    ```
+  </Step>
+  <Step title="Create a Signature Key">
+    In the **Signature Key** field, enter a strong random secret. You can generate one from your terminal:
+
+    ```bash
+    openssl rand -hex 32
+    ```
+
+    Copy the output — you will use it in the next step.
+  </Step>
+  <Step title="Set the WEBHOOK_SECRET environment variable">
+    On your Ancra deployment, set the `WEBHOOK_SECRET` environment variable to the exact same value you entered in the Nomba Dashboard:
+
+    ```bash
+    WEBHOOK_SECRET=your-secret-from-nomba-dashboard
+    ```
+
+    Ancra uses this secret to verify every incoming request. If the values do not match, all events will be rejected.
+  </Step>
+  <Step title="Subscribe to payment events">
+    In the Nomba Dashboard, subscribe to the `payment_success` event at minimum. This is the event that triggers ledger credits. See [Events](/webhooks/events) for a description of all four event types Ancra handles.
+  </Step>
+</Steps>
+
+<Info>
+  The `/webhooks/nomba` endpoint is intentionally public — Nomba must be able to reach it without authentication headers. Security is enforced entirely through HMAC-SHA256 signature verification on every request.
+</Info>
+
+## Idempotency
+
+Every webhook event carries a unique `transactionId`. Ancra stores each processed `transactionId` and checks for duplicates before crediting a ledger. If Nomba retries the same event (for example, because your server returned a non-`2xx` status), Ancra detects the duplicate and responds `200 OK` without creating a second ledger entry.
+
+This means you can safely allow Nomba to retry without worrying about customers being credited multiple times.
+
+## Retry Policy
+
+Nomba retries failed deliveries up to **5 times** using exponential backoff. A delivery is considered failed if Ancra returns any non-`2xx` HTTP status — including `5xx` errors from your infrastructure.
+
+| Attempt | Delay after previous attempt |
+|---------|------------------------------|
+| 1       | 2 minutes                    |
+| 2       | ~5 minutes                   |
+| 3       | ~11 minutes                  |
+| 4       | 24 minutes                   |
+| 5       | ~53 minutes                  |
+
+After 5 failed attempts, Nomba stops retrying and marks the delivery as failed.
+
+<Tip>
+  Always return `200 OK` as quickly as possible. Ancra handles all ledger crediting synchronously before responding, so you do not need to implement a background job pattern — Ancra already does this internally.
+</Tip>

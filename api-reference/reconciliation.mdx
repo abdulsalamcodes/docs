@@ -1,0 +1,107 @@
+---
+title: "Reconciliation API Reference — Ancra"
+sidebarTitle: "Reconciliation"
+description: "Retrieve the latest automated reconciliation report and trigger on-demand sweeps to compare your ledger against Nomba's settlement records."
+---
+
+The Reconciliation API lets you check the status of the automated sweep that compares your ledger against Nomba's settlement records. Ancra runs this sweep on a periodic schedule and logs a report after each run. You can also trigger an immediate sweep on demand — useful after a deployment or when investigating a payment incident.
+
+---
+
+## GET /reconciliation
+
+### Get Latest Report
+
+Returns the most recent reconciliation report produced by the last completed sweep.
+
+```http
+GET /reconciliation
+Authorization: Bearer <key>
+```
+
+#### Response `200 OK`
+
+<ResponseField name="id" type="string">
+  Unique identifier for this reconciliation report (UUID format).
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Summary outcome of the sweep:
+  - `"clean"` — no discrepancies were found between the Ancra ledger and Nomba's records.
+  - `"alert"` — one or more discrepancies were detected; manual review is required.
+</ResponseField>
+
+<ResponseField name="checked_at" type="string">
+  ISO 8601 timestamp of when this sweep was completed.
+</ResponseField>
+
+<ResponseField name="total_checked" type="integer">
+  The number of ledger entries that were cross-referenced against Nomba's transaction records during this sweep.
+</ResponseField>
+
+<ResponseField name="discrepancies" type="integer">
+  The count of entries where the Ancra ledger and Nomba disagree. Will be `0` when `status` is `"clean"`.
+</ResponseField>
+
+```json
+{
+  "id": "r1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "status": "clean",
+  "checked_at": "2026-01-01T06:00:00Z",
+  "total_checked": 1240,
+  "discrepancies": 0
+}
+```
+
+<Note>
+  A `status` of `"alert"` does not necessarily mean funds are missing — it means a mismatch was detected that requires investigation. See [When Discrepancies Occur](#when-discrepancies-occur) below for common causes.
+</Note>
+
+---
+
+## POST /reconciliation/trigger
+
+### Trigger Manual Sweep
+
+Enqueues an immediate reconciliation sweep outside of the normal schedule. The sweep runs **asynchronously** — the response confirms the job was accepted, not that it has completed.
+
+```http
+POST /reconciliation/trigger
+Authorization: Bearer <key>
+```
+
+No request body is required.
+
+#### Response `200 OK`
+
+<ResponseField name="status" type="string">
+  Always `"triggered"` when the sweep is successfully enqueued.
+</ResponseField>
+
+```json
+{ "status": "triggered" }
+```
+
+After receiving a `"triggered"` response, poll `GET /reconciliation` until `checked_at` reflects a timestamp after your trigger request. The updated report will contain the results of the manual sweep.
+
+<Tip>
+  Trigger a manual sweep in these situations:
+  - **After a deployment** — to confirm that any migrations or configuration changes have not introduced ledger inconsistencies.
+  - **When investigating an incident** — to get a fresh snapshot rather than waiting for the next scheduled run.
+</Tip>
+
+---
+
+## When Discrepancies Occur
+
+A discrepancy means at least one ledger entry does not have a matching Nomba transaction, or a Nomba transaction was not credited to the Ancra ledger. If your latest report shows `"status": "alert"` with a non-zero `discrepancies` count, consider the following common causes before escalating:
+
+| Cause | Description |
+|-------|-------------|
+| **Transfer reversal not yet processed** | A `payment_reversal` event from Nomba may be in flight. Wait for the event to be delivered and re-run the sweep. |
+| **Webhook delivery failure** | A `payment_success` event may have failed to deliver, leaving a credit unrecorded in the ledger. Check `GET /admin/webhooks` for failed delivery attempts. |
+| **Nomba ledger debit reversal** | When an outbound transfer fails, Nomba reverses the debit. If the reversal event was not processed, the ledger balance will appear inconsistent until the reversal is applied. |
+
+<Warning>
+  If you cannot identify the cause after reviewing the above, contact Ancra support. Include the `external_ref` (the Nomba transaction ID) for every affected entry so the support team can trace the transaction end-to-end.
+</Warning>

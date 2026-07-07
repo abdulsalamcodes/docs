@@ -1,0 +1,216 @@
+---
+title: "Accept Payments via Virtual Accounts with Ancra"
+sidebarTitle: "Receive Payments"
+description: "Provision a Nigerian virtual account number, configure your webhook, and let Ancra credit your customer's ledger automatically on every inbound NIP transfer."
+---
+
+When a sender makes a NIP transfer to your customer's virtual account number, Nomba receives the payment and fires a signed webhook to your Ancra deployment. Ancra verifies the HMAC signature, resolves the virtual account number to the correct customer, and applies a double-entry credit to that customer's ledger — all without any action required from your server. This page walks you through every step needed to get that flow running end-to-end.
+
+---
+
+<Steps>
+
+  <Step title="Create a Customer">
+    Every virtual account in Ancra must be owned by a customer record. Start by creating one with `POST /customers`. Supply a `kyc_tier` that matches your onboarding requirements — tier `1` is the default and requires no additional identity documents, while tiers `2` and `3` unlock higher transaction limits but require BVN and NIN respectively.
+
+    ```bash
+    curl -X POST https://your-deployment.onrender.com/customers \
+      -H "Authorization: Bearer <key>" \
+      -H "Content-Type: application/json" \
+      -d '{"kyc_tier": 2}'
+    ```
+
+    **Response `201 Created`**
+
+    ```json
+    {
+      "id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+      "kyc_tier": 2,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+    ```
+
+    Store the returned `id`. You will pass it as `customer_id` in the next step.
+
+    <Note>
+      KYC tiers cannot be changed after a customer is created. If you know your customer will need to receive or send larger amounts, set the correct tier now to avoid having to create a new customer record later.
+    </Note>
+  </Step>
+
+  <Step title="Provision a Virtual Account">
+    With a customer `id` in hand, call `POST /accounts` to request a Dedicated Virtual Account. Ancra registers a new account with Nomba and returns a real 10-digit NUBAN bank account number.
+
+    ```bash
+    curl -X POST https://your-deployment.onrender.com/accounts \
+      -H "Authorization: Bearer <key>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "customer_id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+        "display_name": "Amara Okonkwo",
+        "customer_email": "amara@example.com",
+        "phone_number": "08012345678",
+        "bvn": "12345678901"
+      }'
+    ```
+
+    **Request body fields**
+
+    <ParamField body="customer_id" type="string (UUID)" required>
+      The UUID of the customer who will own this account.
+    </ParamField>
+
+    <ParamField body="display_name" type="string" required>
+      The name registered on the virtual account. This is the name senders see when they look up the account number.
+    </ParamField>
+
+    <ParamField body="customer_email" type="string" required>
+      The customer's email address.
+    </ParamField>
+
+    <ParamField body="phone_number" type="string">
+      The customer's phone number (optional but recommended).
+    </ParamField>
+
+    <ParamField body="bvn" type="string">
+      Bank Verification Number — required for KYC Tier 2 and above.
+    </ParamField>
+
+    <ParamField body="nin" type="string">
+      National Identification Number — required for KYC Tier 3.
+    </ParamField>
+
+    **Response `201 Created`**
+
+    ```json
+    {
+      "account": {
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef0123456789",
+        "customer_id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+        "account_ref": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+        "bank_account_number": "9876543210",
+        "bank_account_name": "Amara Okonkwo",
+        "status": "active",
+        "created_at": "2026-01-01T00:00:00Z"
+      },
+      "identity": {
+        "id": "i1b2c3d4-e5f6-7890-abcd-ef0123456789",
+        "customer_id": "c8a1b2d3-e4f5-6789-abcd-ef0123456789",
+        "display_name": "Amara Okonkwo",
+        "effective_from": "2026-01-01T00:00:00Z"
+      }
+    }
+    ```
+
+    The value you need is `account.bank_account_number` — the 10-digit NUBAN that senders will use to pay your customer. See [Sharing the Account Number](#sharing-the-account-number) below for how to present this to your users.
+  </Step>
+
+  <Step title="Configure Your Webhook">
+    Ancra relies on a signed webhook from Nomba to know when a payment has arrived. You need to register your deployment's public URL in the Nomba dashboard so that payment events flow through.
+
+    1. Deploy Ancra with a publicly reachable URL (e.g. `https://your-deployment.onrender.com`).
+    2. In the **Nomba Dashboard**, go to **Developer → Webhook Setup**.
+    3. Set your webhook URL to:
+       ```
+       https://your-deployment.onrender.com/webhooks/nomba
+       ```
+    4. Generate a strong secret — for example:
+       ```bash
+       openssl rand -hex 32
+       ```
+    5. Paste the secret into the **Signature Key** field in the Nomba dashboard.
+    6. Set the same value as the `WEBHOOK_SECRET` environment variable on your Ancra deployment.
+    7. Subscribe to the **`payment_success`** event.
+
+    Once configured, every NIP payment to any of your virtual account numbers will trigger a signed `POST /webhooks/nomba` request that Ancra automatically verifies and processes.
+
+    <Info>
+      Ancra deduplicates every webhook event by `transactionId`. If Nomba retries a delivery (it retries up to five times on failure), Ancra recognises the duplicate and responds `200` without double-crediting the ledger.
+    </Info>
+
+    For a full description of event payloads, HMAC verification, and Nomba's retry schedule, see [Webhooks Overview](/webhooks/overview).
+  </Step>
+
+  <Step title="Verify Payments Arrive">
+    After you have sent a test payment to the virtual account number, confirm that the ledger was credited by querying the account balance and transaction list.
+
+    **Check the balance**
+
+    ```bash
+    curl https://your-deployment.onrender.com/accounts/a1b2c3d4-e5f6-7890-abcd-ef0123456789/balance \
+      -H "Authorization: Bearer <key>"
+    ```
+
+    ```json
+    {
+      "AccountID": "a1b2c3d4-e5f6-7890-abcd-ef0123456789",
+      "Balance": 100000,
+      "Currency": "NGN",
+      "AsOf": "2026-01-01T12:00:00Z"
+    }
+    ```
+
+    `Balance` is always in **kobo**. Divide by 100 to convert to NGN — `100000` kobo = ₦1,000.
+
+    **List recent transactions**
+
+    ```bash
+    curl "https://your-deployment.onrender.com/accounts/a1b2c3d4-e5f6-7890-abcd-ef0123456789/transactions?limit=5&offset=0" \
+      -H "Authorization: Bearer <key>"
+    ```
+
+    ```json
+    {
+      "Entries": [
+        {
+          "id": "e1b2c3d4-e5f6-7890-abcd-ef0123456789",
+          "account_id": "a1b2c3d4-e5f6-7890-abcd-ef0123456789",
+          "direction": "credit",
+          "amount": 100000,
+          "currency": "NGN",
+          "entry_type": "inbound_credit",
+          "external_ref": "API-VACT_TRA-abc123",
+          "narration": "Transfer from John Doe",
+          "created_at": "2026-01-01T11:00:00Z"
+        }
+      ],
+      "Limit": 5,
+      "Offset": 0
+    }
+    ```
+
+    A `direction: "credit"` entry with `entry_type: "inbound_credit"` confirms the payment landed successfully. The `external_ref` is the Nomba transaction ID — keep it for reconciliation and support queries.
+  </Step>
+
+</Steps>
+
+---
+
+## Sharing the Account Number
+
+The `bank_account_number` field in the provisioning response is a standard 10-digit NUBAN. You can share it exactly as you would any Nigerian bank account number:
+
+- Display it in your product UI under a label like **"Your account number"** alongside the bank name.
+- Include it in payment instructions sent via email or SMS.
+- Embed it in invoices or checkout flows so payers can complete a bank transfer from their own banking app.
+
+<Tip>
+  The associated bank name for all Ancra virtual accounts is **Nomba**. Always display the bank name alongside the account number so senders can select the correct institution from their banking app's beneficiary list.
+</Tip>
+
+---
+
+## Idempotency
+
+Calling `POST /accounts` for a customer that already has an active account does **not** create a duplicate. Ancra returns the existing account record instead. This makes it safe to call the provisioning endpoint more than once — for example, if your server retries after a network timeout — without risk of creating ghost accounts or surprising your customer with a different account number.
+
+---
+
+## Closing an Account
+
+When you need to deactivate a customer's virtual account permanently, you can close it via `POST /accounts/{id}/close`. After closure the account's `status` changes to `closed`, and any subsequent inbound payments to that bank account number are routed to a suspense ledger rather than credited to the customer.
+
+<Warning>
+  Account closure is **irreversible** via the API. Payments received after closure are held in suspense and require manual review to return to sender. Only close an account when you are certain no further payments will arrive.
+</Warning>
+
+See the [Close an Account](/api-reference/accounts) reference for the full endpoint details.

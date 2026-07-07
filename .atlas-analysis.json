@@ -1,13 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Ancra",
+  "projectType": "api-service",
+  "projectName": "Ancra",
+  "projectDescription": "Ancra is a Dedicated Virtual Account (DVA) infrastructure API that lets you provision Nigerian bank account numbers for customers, receive payments via webhook, and initiate outbound bank transfers.",
   "theme": "luma",
-  "colors": {
-    "primary": "#1A6BFF",
-    "light": "#EEF4FF",
-    "dark": "#0D3D99"
-  },
-  "favicon": "/favicon.svg",
+  "primaryColor": "#1A6BFF",
+  "lightColor": "#EEF4FF",
+  "darkColor": "#0D3D99",
   "navigation": {
     "tabs": [
       {
@@ -81,10 +79,34 @@
       }
     ]
   },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/abdulsalamcodes/Ancra"
-    }
-  }
+  "keyFeatures": [
+    "Provision dedicated Nigerian bank account numbers (DVAs) per customer",
+    "Automatic ledger crediting on inbound NIP payments via webhooks",
+    "Outbound bank transfers to any Nigerian bank account",
+    "Full double-entry ledger with balance and transaction history",
+    "HMAC-SHA256 webhook signature verification",
+    "Periodic reconciliation sweeps against Nomba settlement records",
+    "KYC tiered customer management (Tier 1–3)",
+    "Idempotent operations — no duplicate accounts or double credits"
+  ],
+  "publicApiSurface": [
+    "POST /customers",
+    "GET /customers/{id}",
+    "GET /customers",
+    "POST /accounts",
+    "GET /accounts/{id}",
+    "GET /accounts",
+    "PUT /accounts/{id}",
+    "GET /accounts/{id}/balance",
+    "GET /accounts/{id}/transactions",
+    "GET /accounts/{id}/statement",
+    "POST /accounts/{id}/close",
+    "POST /accounts/{id}/transfer",
+    "POST /transfers/lookup",
+    "POST /webhooks/nomba",
+    "GET /reconciliation",
+    "POST /reconciliation/trigger",
+    "POST /admin/api-keys",
+    "DELETE /admin/api-keys/{id}"
+  ]
 }

@@ -1,0 +1,111 @@
+---
+title: "Webhook Event Reference for Ancra Payments"
+sidebarTitle: "Events"
+description: "Reference for the four event types fired by Nomba to Ancra, including payload shapes, key fields, and handling notes."
+---
+
+Ancra processes four event types sent by Nomba. Each event arrives at `POST /webhooks/nomba` with an HMAC-SHA256 signature and a consistent top-level envelope containing `event_type`, `requestId`, and a `data` object. Understanding each event helps you build reliable, predictable payment flows and know exactly what triggers a ledger change.
+
+## payment_success
+
+This is the most important event in Ancra. It is fired when a NIP transfer successfully credits a virtual account, and it is the sole trigger for crediting a customer's ledger.
+
+### Payload
+
+```json
+{
+  "event_type": "payment_success",
+  "requestId": "49e11b44-909b-4f83-82b4-9a83aXXXXXX",
+  "data": {
+    "merchant": {
+      "walletId": "693e907aad9ea59616XXXX",
+      "walletBalance": 539.4,
+      "userId": "613bb620-c8e5-45f6-9c00-XXXXXXXX"
+    },
+    "terminal": {},
+    "transaction": {
+      "aliasAccountNumber": "9876543210",
+      "fee": 0.6,
+      "sessionId": "1000042602061021531516XXXXXX",
+      "type": "vact_transfer",
+      "transactionId": "API-VACT_TRA-613BB-eeae578a-...",
+      "aliasAccountName": "Amara Okonkwo",
+      "responseCode": "",
+      "originatingFrom": "api",
+      "transactionAmount": 1000,
+      "narration": "Transfer from John Doe",
+      "time": "2026-01-01T10:00:00Z",
+      "aliasAccountReference": "c8a1b2d3-...",
+      "aliasAccountType": "VIRTUAL"
+    },
+    "customer": {
+      "bankCode": "305",
+      "senderName": "John Doe",
+      "bankName": "Paycom (Opay)",
+      "accountNumber": "0812345678"
+    }
+  }
+}
+```
+
+### Key Fields
+
+| Field | Description |
+|-------|-------------|
+| `data.transaction.aliasAccountNumber` | The virtual account number that received the payment. Ancra uses this to look up the correct customer. |
+| `data.transaction.transactionAmount` | The credited amount in **NGN (naira)**. This is not in kobo — Ancra converts internally if needed. |
+| `data.transaction.transactionId` | Nomba's unique identifier for this transaction. Store this and use it for deduplication. |
+| `data.transaction.narration` | Free-text reference provided by the sender — often useful for your records. |
+| `data.customer.senderName` | The full name of the person or entity who sent the payment. |
+
+<Note>
+  `transactionAmount` is denominated in **NGN (naira)**, not kobo. A value of `1000` means ₦1,000. Ancra handles any internal unit conversion transparently — you do not need to divide by 100.
+</Note>
+
+---
+
+## payout_success
+
+Fired when an outbound transfer initiated through Ancra completes successfully on the Nomba network. This event confirms that funds have left the Ancra system and been delivered to the recipient's bank account.
+
+<Info>
+  You can use this event to update your records or notify your customer that their withdrawal has been processed. No ledger crediting occurs on `payout_success` — the ledger debit was applied when the payout was initiated.
+</Info>
+
+---
+
+## payment_failed
+
+Fired when a payment attempt fails before any credit is applied to a virtual account. Because the funds never arrived, **no ledger entry is created** for this event. Ancra acknowledges the event and takes no further action.
+
+Common causes include insufficient funds at the sender's bank, NIP network timeouts, or an invalid virtual account number being used by the sender.
+
+<Note>
+  If you have built customer-facing tooling that listens for payment notifications, be aware that `payment_failed` does **not** mean the customer's balance has changed — it means the incoming transfer was rejected upstream.
+</Note>
+
+---
+
+## payment_reversal
+
+Fired when a previously credited payment is reversed — for example, when a sender's bank initiates a recall or when Nomba voids a transaction that was already processed.
+
+<Warning>
+  A `payment_reversal` event means a customer's ledger may now show a credit that no longer has a corresponding settled fund. **Contact Ancra support immediately** if you receive this event in production. Manual ledger adjustment is likely required, and the correct remediation depends on whether the original credit was already disbursed.
+</Warning>
+
+---
+
+## Unhandled Events
+
+Nomba may send event types beyond the four described above as it adds features to its platform. For any event type that Ancra does not explicitly handle, it responds with:
+
+```http
+HTTP/1.1 200 OK
+```
+
+```json
+{ "status": "ignored" }
+```
+
+Returning `200` for unrecognised events prevents Nomba from retrying them indefinitely (which would happen if Ancra returned `4xx` or `5xx`). This is intentional — unknown events are safely acknowledged and discarded without affecting any customer data.

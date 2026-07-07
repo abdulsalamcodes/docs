@@ -1,0 +1,167 @@
+---
+title: "Verify Nomba Webhook Signatures in Your Application"
+sidebarTitle: "Verification"
+description: "Step-by-step guide to HMAC-SHA256 signature verification for Nomba webhooks, with reference implementations in Go and JavaScript."
+---
+
+Every webhook request sent by Nomba includes an HMAC-SHA256 signature computed from a subset of the payload fields. Ancra verifies this signature automatically the moment an event arrives at `POST /webhooks/nomba` — requests that fail verification are rejected with `401 Unauthorized` and never reach your ledger logic.
+
+If you are forwarding events to a downstream system, replaying events from your logs for testing, or building your own Nomba integration alongside Ancra, you can verify signatures yourself using the same algorithm described here.
+
+## Signature Headers
+
+Nomba attaches four headers to every webhook request. You need all of them to perform verification.
+
+| Header | Value |
+|--------|-------|
+| `nomba-signature` | Base64-encoded HMAC-SHA256 digest of the signing string |
+| `nomba-timestamp` | RFC-3339 timestamp of when Nomba sent the event (e.g. `2026-01-01T10:00:00Z`) |
+| `nomba-signature-algorithm` | Always `HmacSHA256` |
+| `nomba-signature-version` | Always `1.0.0` |
+
+<Note>
+  Header names are case-insensitive in HTTP/1.1 and HTTP/2. Your HTTP library may normalise them to lowercase (`nomba-signature`) or title case (`Nomba-Signature`) — treat both as equivalent.
+</Note>
+
+## Signing Algorithm
+
+Nomba does **not** sign the raw request body. Instead, it extracts specific fields from the payload, concatenates them with colons, and signs the resulting string. This means the signature remains valid even if Nomba adds new fields to the payload envelope in the future.
+
+The signing string has the following format:
+
+```
+event_type:request_id:user_id:wallet_id:transaction_id:transaction_type:transaction_time:response_code:timestamp
+```
+
+Each segment maps to a specific location in the payload or request headers:
+
+| Segment | Source |
+|---------|--------|
+| `event_type` | `payload.event_type` |
+| `request_id` | `payload.requestId` |
+| `user_id` | `payload.data.merchant.userId` |
+| `wallet_id` | `payload.data.merchant.walletId` |
+| `transaction_id` | `payload.data.transaction.transactionId` |
+| `transaction_type` | `payload.data.transaction.type` |
+| `transaction_time` | `payload.data.transaction.time` |
+| `response_code` | `payload.data.transaction.responseCode` — use `""` (empty string) if the value is the string `"null"` |
+| `timestamp` | Value of the `nomba-timestamp` request header |
+
+Once you have assembled the colon-separated string, compute `HMAC-SHA256(secret, signingString)` and Base64-encode the result. Compare it against the `nomba-signature` header value.
+
+<Warning>
+  Always use a **constant-time comparison** when checking the signature. Standard string equality (`==`, `===`, `.equals()`) is vulnerable to timing attacks that allow an attacker to infer the expected signature byte-by-byte. Use `hmac.Equal` in Go or `crypto.timingSafeEqual` in Node.js — both are shown in the examples below.
+</Warning>
+
+## Verify in Go
+
+```go
+import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/base64"
+    "encoding/json"
+    "fmt"
+    "net/http"
+)
+
+func verifySignature(body []byte, r *http.Request, secret string) bool {
+    sig := r.Header.Get("nomba-signature")
+    timestamp := r.Header.Get("nomba-timestamp")
+
+    var p struct {
+        EventType string `json:"event_type"`
+        RequestID string `json:"requestId"`
+        Data struct {
+            Merchant struct {
+                UserID   string `json:"userId"`
+                WalletID string `json:"walletId"`
+            } `json:"merchant"`
+            Transaction struct {
+                TransactionID string `json:"transactionId"`
+                Type          string `json:"type"`
+                Time          string `json:"time"`
+                ResponseCode  string `json:"responseCode"`
+            } `json:"transaction"`
+        } `json:"data"`
+    }
+    json.Unmarshal(body, &p)
+
+    rc := p.Data.Transaction.ResponseCode
+    if rc == "null" {
+        rc = ""
+    }
+
+    hashStr := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s:%s:%s",
+        p.EventType, p.RequestID,
+        p.Data.Merchant.UserID, p.Data.Merchant.WalletID,
+        p.Data.Transaction.TransactionID, p.Data.Transaction.Type,
+        p.Data.Transaction.Time, rc, timestamp,
+    )
+
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write([]byte(hashStr))
+    expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+    // hmac.Equal performs a constant-time comparison
+    return hmac.Equal([]byte(expected), []byte(sig))
+}
+```
+
+## Verify in JavaScript
+
+```javascript
+import crypto from "crypto";
+
+function verifySignature(body, headers, secret) {
+  const sig = headers["nomba-signature"];
+  const timestamp = headers["nomba-timestamp"];
+  const p = JSON.parse(body);
+
+  const txn = p.data?.transaction || {};
+  const merchant = p.data?.merchant || {};
+
+  let responseCode = txn.responseCode || "";
+  if (responseCode === "null") responseCode = "";
+
+  const hashStr = [
+    p.event_type,
+    p.requestId,
+    merchant.userId,
+    merchant.walletId,
+    txn.transactionId,
+    txn.type,
+    txn.time,
+    responseCode,
+    timestamp,
+  ].join(":");
+
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(hashStr)
+    .digest("base64");
+
+  // timingSafeEqual prevents timing-based side-channel attacks
+  return crypto.timingSafeEqual(
+    Buffer.from(expected),
+    Buffer.from(sig)
+  );
+}
+```
+
+## Common Verification Mistakes
+
+<CardGroup cols={2}>
+  <Card title="Signing the raw body" icon="xmark">
+    Nomba signs a **colon-separated field string**, not the raw JSON body. Using `body` directly in your HMAC call will always produce the wrong signature.
+  </Card>
+  <Card title="Forgetting the timestamp segment" icon="xmark">
+    The `nomba-timestamp` header value is the **last segment** of the signing string. Omitting it is the most common cause of signature mismatches.
+  </Card>
+  <Card title="Using standard string equality" icon="xmark">
+    Using `===` or `==` instead of `crypto.timingSafeEqual` / `hmac.Equal` leaves your endpoint vulnerable to timing attacks. Always use constant-time comparison.
+  </Card>
+  <Card title="Not handling null responseCode" icon="xmark">
+    When `data.transaction.responseCode` is the string `"null"`, you must substitute an empty string `""` before building the signing string, or your digest will not match.
+  </Card>
+</CardGroup>

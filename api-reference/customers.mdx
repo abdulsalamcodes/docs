@@ -1,0 +1,170 @@
+---
+title: "Customers API Reference — Ancra"
+sidebarTitle: "Customers"
+description: "Create and manage customer records in Ancra. Customers own virtual accounts and carry a KYC tier that controls account limits."
+---
+
+The Customers API lets you create and manage the customer records that own virtual accounts. Every virtual account you provision must be attached to an existing customer. The customer's `kyc_tier` determines which identity fields are required at account provisioning time and what transaction limits apply.
+
+---
+
+## POST /customers — Create Customer
+
+```http
+POST /customers
+Authorization: Bearer <key>
+```
+
+Create a new customer record. You can optionally set a KYC tier at creation time; if you omit it, the customer defaults to Tier 1.
+
+### Request body
+
+<ParamField body="kyc_tier" type="integer">
+  The KYC tier to assign to this customer. Valid values are `1`, `2`, or `3`. Defaults to `1` if omitted.
+
+  | Tier | Identity requirements at account provisioning |
+  |------|-----------------------------------------------|
+  | 1    | None beyond name and email                    |
+  | 2    | BVN required                                  |
+  | 3    | BVN **and** NIN required                      |
+</ParamField>
+
+### Request example
+
+```json
+{
+  "kyc_tier": 1
+}
+```
+
+### Response `201 Created`
+
+<ResponseField name="id" type="string (UUID)">
+  The unique identifier for the newly created customer. Use this value as `customer_id` when provisioning virtual accounts.
+</ResponseField>
+
+<ResponseField name="kyc_tier" type="integer">
+  The KYC tier assigned to this customer (`1`, `2`, or `3`).
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  The UTC timestamp at which the customer record was created.
+</ResponseField>
+
+```json
+{
+  "id": "c1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "kyc_tier": 1,
+  "created_at": "2026-01-01T10:00:00Z"
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | Bad request — the request body contains an invalid field or an unsupported `kyc_tier` value. |
+
+---
+
+## GET /customers/\{id\} — Get Customer
+
+```http
+GET /customers/{id}
+Authorization: Bearer <key>
+```
+
+Retrieve a single customer record by its UUID. You can use this to confirm a customer exists before provisioning an account, or to check a customer's current KYC tier.
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  The unique identifier of the customer you want to retrieve. Must be a valid UUID — for example, `c1b2c3d4-e5f6-7890-abcd-ef1234567890`.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="id" type="string (UUID)">
+  The unique identifier for the customer.
+</ResponseField>
+
+<ResponseField name="kyc_tier" type="integer">
+  The KYC tier assigned to this customer (`1`, `2`, or `3`).
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  The UTC timestamp at which the customer record was created.
+</ResponseField>
+
+```json
+{
+  "id": "c1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "kyc_tier": 1,
+  "created_at": "2026-01-01T10:00:00Z"
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | The `id` path parameter is not a valid UUID. |
+| `404`  | No customer with the given `id` was found.   |
+
+---
+
+## GET /customers — List Customers
+
+```http
+GET /customers?limit=20&offset=0
+Authorization: Bearer <key>
+```
+
+Return a paginated list of all customer records in your workspace. Use `limit` and `offset` to page through large result sets.
+
+### Query parameters
+
+<ParamField query="limit" type="integer">
+  The maximum number of customer records to return in a single response. Defaults to `20`.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  The number of records to skip before returning results. Use this with `limit` to paginate. Defaults to `0`.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="customers" type="array">
+  An array of customer objects. Each object contains the same fields returned by [Get Customer](#get-customers-id-get-customer): `id`, `kyc_tier`, and `created_at`.
+</ResponseField>
+
+<ResponseField name="limit" type="integer">
+  The `limit` value that was applied to this response.
+</ResponseField>
+
+<ResponseField name="offset" type="integer">
+  The `offset` value that was applied to this response.
+</ResponseField>
+
+```json
+{
+  "customers": [
+    {
+      "id": "c1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "kyc_tier": 1,
+      "created_at": "2026-01-01T10:00:00Z"
+    },
+    {
+      "id": "d2c3e4f5-a6b7-8901-cdef-234567890abc",
+      "kyc_tier": 2,
+      "created_at": "2026-01-02T09:30:00Z"
+    }
+  ],
+  "limit": 20,
+  "offset": 0
+}
+```
+
+<Tip>
+  To fetch the next page, increment `offset` by the value of `limit`. For example, to get results 21–40, send `?limit=20&offset=20`.
+</Tip>

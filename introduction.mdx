@@ -1,0 +1,58 @@
+---
+title: "Ancra: Virtual Account Infrastructure for Nigeria"
+sidebarTitle: "Introduction"
+description: "Ancra is a REST API for provisioning Nigerian virtual bank accounts, receiving payments via webhook, and initiating outbound bank transfers."
+---
+
+Ancra is a Dedicated Virtual Account (DVA) infrastructure API built for the Nigerian payments ecosystem. With Ancra, you can provision real bank account numbers for your customers, automatically credit their ledger balances the moment a payment arrives, and send money to any Nigerian bank account — all through a single, consistent REST API.
+
+Whether you are building a fintech wallet, a marketplace escrow system, or a B2B payments product, Ancra gives you the low-level primitives you need to move money safely and reliably.
+
+## What You Can Build
+
+<CardGroup cols={2}>
+  <Card title="Collect Payments" icon="money-bill-wave">
+    Issue each customer a unique virtual account number. When a sender makes a NIP transfer to that number, Ancra credits the customer's ledger automatically.
+  </Card>
+  <Card title="Credit Wallets" icon="wallet">
+    Maintain a full double-entry ledger per account. Every inbound payment and outbound transfer is recorded and reconcilable against Nomba's settlement records.
+  </Card>
+  <Card title="Initiate Transfers" icon="paper-plane">
+    Send funds from a customer's virtual account to any Nigerian bank account with a single API call. Ancra handles provider communication and automatic debit reversal on failure.
+  </Card>
+  <Card title="Reconcile Ledgers" icon="scale-balanced">
+    Compare your internal ledger balances against upstream settlement data to detect discrepancies and maintain accurate books at all times.
+  </Card>
+</CardGroup>
+
+## How It Works
+
+<Steps>
+  <Step title="Create a Customer">
+    Register a customer record in Ancra. Every virtual account is scoped to a customer, so this is always your first step.
+  </Step>
+  <Step title="Provision a Virtual Account">
+    Request a Dedicated Virtual Account for the customer. Ancra returns a real Nigerian bank account number that the customer can share with anyone who needs to pay them.
+  </Step>
+  <Step title="Receive a Payment via Webhook">
+    When a NIP transfer arrives at the virtual account, your configured webhook URL receives a `payment_success` event. Ancra verifies the provider signature before delivering the event to you.
+  </Step>
+  <Step title="Ledger is Credited">
+    Ancra applies a double-entry credit to the customer's ledger balance. You can query the balance at any time or act on it programmatically inside your webhook handler.
+  </Step>
+  <Step title="Initiate a Transfer">
+    When the customer is ready to send money, call the transfers endpoint. Ancra debits the ledger and forwards the instruction to the payment provider. If the transfer is rejected, the debit is automatically reversed.
+  </Step>
+</Steps>
+
+## Base URL
+
+All API requests are made to your own deployment. Replace the example below with your actual deployment URL.
+
+```
+https://your-deployment.onrender.com
+```
+
+<Note>
+  All monetary amounts in the Ancra API — balances, transfer amounts, and payment values — are expressed in **kobo**, the smallest unit of the Nigerian Naira. 1 NGN = 100 kobo, so ₦1,000 is represented as `100000`.
+</Note>
